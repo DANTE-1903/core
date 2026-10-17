@@ -250,6 +250,12 @@ export interface StreamContractEventsOptions {
   horizonUrl: string;
   intervalMs?: number;
   maxBackoffMs?: number;
+  /**
+   * Delay in milliseconds before the next poll when a successful fetch returns
+   * no new events. Defaults to `intervalMs`. Set to a shorter value (e.g. 100)
+   * to poll more aggressively during idle periods.
+   */
+  emptyPollDelayMs?: number;
   fetch?: typeof fetch;
   onEvent: (events: ContractEvent[]) => void;
   onError?: (err: Error, attempt: number) => void;
