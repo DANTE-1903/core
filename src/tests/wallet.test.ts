@@ -1989,4 +1989,40 @@ describe("wallet discovery (#wallet-discovery)", () => {
       }
     });
   });
+
+  describe("clearLinkedAccounts (#760)", () => {
+    it("removes all linked accounts for every public key", async () => {
+      await linkWallet(ACCOUNT_A, "example.com");
+      await linkWallet(ACCOUNT_B, "stellar.org");
+
+      clearLinkedAccounts();
+
+      const resultA = await listLinkedAccounts(ACCOUNT_A);
+      const resultB = await listLinkedAccounts(ACCOUNT_B);
+      expect(resultA.status).toBe("ok");
+      expect(resultB.status).toBe("ok");
+      if (resultA.status === "ok") expect(resultA.data.accounts).toEqual([]);
+      if (resultB.status === "ok") expect(resultB.data.accounts).toEqual([]);
+    });
+
+    it("is safe to call on an already-empty registry", async () => {
+      expect(() => clearLinkedAccounts()).not.toThrow();
+      const result = await listLinkedAccounts(ACCOUNT_A);
+      expect(result.status).toBe("ok");
+      if (result.status === "ok") expect(result.data.accounts).toEqual([]);
+    });
+
+    it("accounts linked after a clear are visible normally", async () => {
+      await linkWallet(ACCOUNT_A, "example.com");
+      clearLinkedAccounts();
+      await linkWallet(ACCOUNT_A, "stellar.org");
+
+      const result = await listLinkedAccounts(ACCOUNT_A);
+      expect(result.status).toBe("ok");
+      if (result.status === "ok") {
+        expect(result.data.accounts).toHaveLength(1);
+        expect(result.data.accounts[0].domain).toBe("stellar.org");
+      }
+    });
+  });
 });
