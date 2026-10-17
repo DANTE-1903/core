@@ -118,7 +118,7 @@ export type {
   ContractErrorMap,
   DecodedContractError,
 } from "./contractErrors";
-export { ContractInteractionBuilder } from "./contractInteractionBuilder";
+export { ContractInteractionBuilder, createContractInteractionBuilder } from "./contractInteractionBuilder";
 export type {
   ContractInteractionBuilderConfig,
   ArgumentField,

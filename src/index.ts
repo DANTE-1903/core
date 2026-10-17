@@ -953,7 +953,7 @@ export type {
   ContractErrorMap,
   DecodedContractError,
 } from "./soroban/contractErrors";
-export { ContractInteractionBuilder } from "./soroban";
+export { ContractInteractionBuilder, createContractInteractionBuilder } from "./soroban";
 export type {
   ContractInteractionBuilderConfig,
   ArgumentField,
