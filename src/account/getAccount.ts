@@ -61,7 +61,15 @@ export function getAccount(
         // `balance` field for those edge cases.
         //
         // For the full precision discussion see AssetBalance.balanceFloat.
-        const pf = (s: string) => parseFloat(s);
+        const pf = (s: string): number => {
+          const v = parseFloat(s);
+          if (v > Number.MAX_SAFE_INTEGER) {
+            console.warn(
+              `[sorokit] Balance "${s}" exceeds MAX_SAFE_INTEGER — use the string 'balance' field for full precision.`,
+            );
+          }
+          return v;
+        };
 
         if (b.asset_type === "native") {
           return {
