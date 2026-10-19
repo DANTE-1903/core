@@ -193,6 +193,10 @@ export type PathPaymentMode = "strict-send" | "strict-receive";
 
 export interface PathPaymentParams extends MemoParams {
   destination: string;
+  /** How to handle destination equal to the source account. Defaults to "warn". */
+  selfPaymentBehavior?: "warn" | "error" | "allow";
+  /** Explicit opt-in for intentional self-payments. */
+  allowSelfPayment?: boolean;
   sendAssetCode?: string;
   sendAssetIssuer?: string;
   destAssetCode?: string;

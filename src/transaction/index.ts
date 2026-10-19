@@ -314,6 +314,15 @@ export {
   DEFAULT_PATH_DISCOVERY_CACHE_TTL_MS,
   buildOptimizedSplitPaymentPlan,
 } from "./pathPayment";
+export {
+  TrustlineManager,
+  createTrustlineManager,
+  createTrustline,
+} from "./trustlineManager";
+export type {
+  TrustlineManagerOptions,
+  CreateTrustlineResult,
+} from "./trustlineManager";
 export type {
   DiscoveredPaymentPath,
   PaymentPathDiscoveryResult,
