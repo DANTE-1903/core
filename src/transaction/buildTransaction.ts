@@ -924,6 +924,19 @@ export async function buildPathPayment(
   params: PathPaymentParams,
   trustedIssuers?: string[] | null,
 ): Promise<SorokitResult<string>> {
+  const selfPaymentAllowed =
+    params.allowSelfPayment === true || params.selfPaymentBehavior === "allow";
+  const selfPaymentBehavior = params.selfPaymentBehavior ?? "warn";
+  if (sourcePublicKey === params.destination && !selfPaymentAllowed) {
+    const message =
+      "Path payment destination is the same as the source account; self-payments are usually unintended.";
+    if (selfPaymentBehavior === "error") {
+      return err(SorokitErrorCode.ROUTER_INVALID_PATH, message);
+    }
+    if (selfPaymentBehavior === "warn") {
+      console.warn(message);
+    }
+  }
   const sendAssetResult = resolveAsset(
     params.sendAssetCode,
     params.sendAssetIssuer,

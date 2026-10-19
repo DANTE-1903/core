@@ -72,6 +72,10 @@ export interface BuildPathPaymentParams {
   mode: "strict-send" | "strict-receive";
   /** Optional pre-computed path */
   path?: SwapRouteAsset[];
+  /** How to handle a destination equal to sourcePublicKey. Defaults to "warn". */
+  selfPaymentBehavior?: "warn" | "error" | "allow";
+  /** Convenience opt-in for callers that intentionally make self-payments. */
+  allowSelfPayment?: boolean;
 }
 
 /**
@@ -157,6 +161,18 @@ export async function findSwapPath(
 export async function buildPathPaymentTransaction(
   params: BuildPathPaymentParams,
 ): Promise<SorokitResult<string>> {
+  const selfPaymentAllowed = params.allowSelfPayment === true || params.selfPaymentBehavior === "allow";
+  const selfPaymentBehavior = params.selfPaymentBehavior ?? "warn";
+  if (params.sourcePublicKey === params.destination && !selfPaymentAllowed) {
+    const message =
+      "Path payment destination is the same as the source account; self-payments are usually unintended.";
+    if (selfPaymentBehavior === "error") {
+      return err(SorokitErrorCode.ROUTER_INVALID_PATH, message);
+    }
+    if (selfPaymentBehavior === "warn") {
+      console.warn(message);
+    }
+  }
   // Placeholder implementation
   // In production, this would use Stellar SDK to build the transaction
 

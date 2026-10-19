@@ -573,6 +573,26 @@ export type {
   SplitPaymentPlan,
   SplitPaymentOptions,
 } from "./transaction/pathPayment";
+export {
+  TrustlineManager,
+  createTrustlineManager,
+  createTrustline,
+} from "./transaction/trustlineManager";
+export type {
+  TrustlineManagerOptions,
+  CreateTrustlineResult,
+} from "./transaction/trustlineManager";
+export {
+  serializeContractDataKey,
+  equalContractDataKeys,
+} from "./soroban/contractData";
+export type { ContractDataKey } from "./soroban/contractData";
+export { StreamEventEmitter } from "./streaming/streamEventEmitter";
+export type {
+  StreamEventMap,
+  StreamEventListener,
+  StreamEventUnsubscribe,
+} from "./streaming/streamEventEmitter";
 export { streamTransactions } from "./transaction/streamTransactions";
 export {
   streamTransactionsSSE,

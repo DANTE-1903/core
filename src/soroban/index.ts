@@ -16,6 +16,11 @@ export interface ContractDataValidationResult {
 
 export { readContract } from "./readContract";
 export {
+  serializeContractDataKey,
+  equalContractDataKeys,
+} from "./contractData";
+export type { ContractDataKey } from "./contractData";
+export {
   createContractReadCacheKey,
   invalidateContractReadCache,
 } from "./contractCallIdentity";
