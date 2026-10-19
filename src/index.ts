@@ -684,6 +684,10 @@ export type {
   PaymentWebhookRegistration,
   PaymentNotificationInput,
   PaymentNotificationChannel,
+  PaymentDeliveryFailure,
+  PaymentDeliveryFailureCallback,
+  DispatchPaymentNotificationOptions,
+  DispatchPaymentNotificationHandler,
 } from "./transaction/paymentNotifications";
 export {
   DEFAULT_PRICE_CACHE_TTL_MS,
@@ -1050,8 +1054,18 @@ export {
 } from "./soroban/contractCallIdentity";
 export type { BuildContractDeployOptions } from "./soroban/deployContract";
 export { invokeBatchContracts } from "./soroban/invokeBatchContracts";
-export { simulateTransactionBatch } from "./soroban/simulateTransaction";
-export type { BatchSimulationResult } from "./soroban/simulateTransaction";
+export {
+  simulateTransaction,
+  simulateTransactionBatch,
+  extractResourceUsage,
+  validateResourceUsageResponse,
+} from "./soroban/simulateTransaction";
+export type {
+  BatchSimulationResult,
+  SimulateTransactionOptions,
+  ExtractResourceUsageOptions,
+  ResourceUsageValidationResult,
+} from "./soroban/simulateTransaction";
 export { getNftMetadata, clearNftMetadataCache } from "./soroban/nftMetadata";
 export type { NftMetadata, NftMetadataOptions } from "./soroban/nftMetadata";
 export {

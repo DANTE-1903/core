@@ -28,8 +28,18 @@ export {
 } from "./contractEncoding";
 export { parseContractResult } from "./parseContractResult";
 export { prepareContractCall } from "./prepareCall";
-export { simulateTransaction, simulateTransactionBatch } from "./simulateTransaction";
-export type { BatchSimulationResult, SimulateTransactionOptions } from "./simulateTransaction";
+export {
+  simulateTransaction,
+  simulateTransactionBatch,
+  extractResourceUsage,
+  validateResourceUsageResponse,
+} from "./simulateTransaction";
+export type {
+  BatchSimulationResult,
+  SimulateTransactionOptions,
+  ExtractResourceUsageOptions,
+  ResourceUsageValidationResult,
+} from "./simulateTransaction";
 export { simulateContractSafe } from "./simulateContractSafe";
 export type {
   SimulateContractSafeOptions,

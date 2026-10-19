@@ -439,6 +439,10 @@ export type {
   PaymentWebhookRegistration,
   PaymentNotificationInput,
   PaymentNotificationChannel,
+  PaymentDeliveryFailure,
+  PaymentDeliveryFailureCallback,
+  DispatchPaymentNotificationOptions,
+  DispatchPaymentNotificationHandler,
 } from "./paymentNotifications";
 export type {
   WebhookEventType,
