@@ -174,6 +174,8 @@ export interface SimulateTransactionResult {
   resourceUsage?: SorobanSimulationResourceUsage;
   /** Fee components derived from the RPC simulation response */
   feeBreakdown?: SorobanSimulationFeeBreakdown;
+  /** Warning message if RPC simulation response had missing or incomplete expected resource fields */
+  warning?: string;
 }
 
 export interface SorobanSimulationResourceUsage {
@@ -186,6 +188,12 @@ export interface SorobanSimulationResourceUsage {
     readOnly?: number;
     readWrite?: number;
   };
+  /** Missing expected fields detected during response validation */
+  missingFields?: string[];
+  /** Warning message describing missing expected fields */
+  warning?: string;
+  /** Validation error message when required resource fields are missing */
+  error?: string;
 }
 
 export interface SorobanSimulationFeeBreakdown {
