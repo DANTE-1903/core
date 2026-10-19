@@ -684,6 +684,10 @@ export type {
   PaymentWebhookRegistration,
   PaymentNotificationInput,
   PaymentNotificationChannel,
+  PaymentDeliveryFailure,
+  PaymentDeliveryFailureCallback,
+  DispatchPaymentNotificationOptions,
+  DispatchPaymentNotificationHandler,
 } from "./transaction/paymentNotifications";
 export {
   DEFAULT_PRICE_CACHE_TTL_MS,
