@@ -275,6 +275,7 @@ import type { ContractEvent } from "../soroban/subscribeContractEvents";
 import type {
   AnchorAsset,
   AnchorRequestOptions,
+  GetAnchorInfoOptions,
   Sep10AuthOptions,
   Sep24InteractiveResult,
 } from "../integration/anchors";
@@ -428,6 +429,11 @@ export interface SorokitClient {
       options?: FetchStellarTomlOptions,
     ): Promise<SorokitResult<StellarToml>>;
     clearStellarTomlCache(domain?: string): Promise<void>;
+    getAnchorInfo(
+      homeDomain: string,
+      options?: GetAnchorInfoOptions,
+    ): Promise<SorokitResult<StellarToml>>;
+    clearAnchorCache(homeDomain?: string): Promise<void>;
     authenticateSep10(
       anchorUrl: string,
       options: Sep10AuthOptions,
@@ -1539,6 +1545,13 @@ export function createSorokitClient(
         ),
       clearStellarTomlCache: async (domain) =>
         (await import("../integration/sep1Toml")).clearStellarTomlCache(domain),
+      getAnchorInfo: async (homeDomain, options) =>
+        (await import("../integration/anchors")).getAnchorInfo(
+          homeDomain,
+          options,
+        ),
+      clearAnchorCache: async (homeDomain) =>
+        (await import("../integration/anchors")).clearAnchorCache(homeDomain),
       authenticateSep10: async (anchorUrl, options) =>
         (await import("../integration/anchors")).authenticateSep10(
           anchorUrl,
