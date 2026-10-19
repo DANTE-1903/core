@@ -1106,6 +1106,7 @@ export type {
 export {
   createClaimCommitment,
   createProofEnvelope,
+  configureZeroKnowledgeVerificationLimits,
   verifyProof,
   validatePrivateTransaction,
 } from "./privacy/zeroKnowledge";
@@ -1116,8 +1117,10 @@ export type {
   ZeroKnowledgeProof,
   ProofVerificationContext,
   ZeroKnowledgeVerifier,
+  ZeroKnowledgeVerificationLimits,
   PrivateTransactionValidationResult,
 } from "./privacy/zeroKnowledge";
+export { DEFAULT_ZERO_KNOWLEDGE_VERIFICATION_LIMITS } from "./privacy/zeroKnowledge";
 export type {
   CallOptimizationReport,
   CallOptimizationSuggestion,
