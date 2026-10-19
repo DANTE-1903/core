@@ -498,6 +498,7 @@ export {
 export type {
   TimeBounds,
   TimeLockExecutionStatus,
+  TimeLockTransactionOptions,
 } from "./transaction/timeLocks";
 
 // ─── Transaction cost forecasting (#588) ──────────────────────────────────────
