@@ -1931,6 +1931,7 @@ export type {
 // ─── Transaction scheduler (#453) ────────────────────────────────────────────
 export { createCache, CacheBuilder } from "./performance/cacheStrategy";
 export type {
+  CacheOptions,
   CachedData,
   CacheStats,
   CacheFetcher,

@@ -26,4 +26,4 @@ export type {
   TelemetrySpan,
 } from "./telemetry";
 export { createCache, CacheBuilder } from "./cacheStrategy";
-export type { CachedData, CacheStats, CacheFetcher } from "./cacheStrategy";
+export type { CacheOptions, CachedData, CacheStats, CacheFetcher } from "./cacheStrategy";
