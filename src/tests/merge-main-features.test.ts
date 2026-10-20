@@ -10,6 +10,7 @@ import {
 import {
   generateRollbackInstructions,
   getTransactionStatus,
+  submitBatch,
   suggestRetryStrategy,
   wasAtomicExecuted,
   type BatchSubmissionResult,
@@ -65,29 +66,31 @@ describe("merged main feature helpers", () => {
     expect(analyzeBatchCost([]).status).toBe("error");
   });
 
-  it("tracks batch transaction status and retry guidance", () => {
-    const submitted: BatchSubmissionResult = {
-      ok: false,
-      summary: "partial_success",
-      status: "partial_success",
-      succeeded: 1,
-      failed: 1,
-      submitted: 2,
+  it("tracks batch transaction status and retry guidance", async () => {
+    const submitted = await submitBatch(["tx-one", "tx-two"], {
       atomic: true,
       rollbackOnFailure: true,
+    });
+
+    expect(submitted.status).toBe("ok");
+    if (submitted.status !== "ok") return;
+
+    expect(submitted.data.rollbackOnFailure).toBe(true);
+    expect(getTransactionStatus(submitted.data, 1).status).toBe("ok");
+    expect(getTransactionStatus(submitted.data, 5).status).toBe("error");
+
+    const failedBatch: BatchSubmissionResult = {
+      ...submitted.data,
+      status: "partial_success",
       transactions: [
         { xdr: "tx-one", status: "success" },
         { xdr: "tx-two", status: "failed", error: "bad sequence" },
       ],
     };
 
-    expect(submitted.rollbackOnFailure).toBe(true);
-    expect(getTransactionStatus(submitted, 1).status).toBe("ok");
-    expect(getTransactionStatus(submitted, 5).status).toBe("error");
-
-    const rollback = generateRollbackInstructions(submitted);
-    const retry = suggestRetryStrategy(submitted);
-    const atomicComplete = wasAtomicExecuted(submitted);
+    const rollback = generateRollbackInstructions(failedBatch);
+    const retry = suggestRetryStrategy(failedBatch);
+    const atomicComplete = wasAtomicExecuted(failedBatch);
 
     expect(rollback.status).toBe("ok");
     expect(retry.status).toBe("ok");

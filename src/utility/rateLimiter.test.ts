@@ -16,6 +16,44 @@ describe("rate limiter", () => {
     vi.useRealTimers();
   });
 
+  it("rejects requests beyond the queue limit while slow operations are pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const limiter = createRateLimiter(1, 1_000, { maxRetries: 0, maxQueueSize: 1 });
+      let finishFirst: (value: string) => void = () => {};
+      const first = limiter.execute(() => new Promise<string>((resolve) => {
+        finishFirst = resolve;
+      }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      const second = limiter.execute(async () => "second");
+      expect(limiter.pending).toBe(1);
+      const overflow = await limiter.execute(async () => "third");
+      expect(overflow).toMatchObject({ status: "error", error: { code: "RATE_LIMITED" } });
+      expect(limiter.pending).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await second).toMatchObject({ status: "ok", data: "second" });
+      finishFirst("first");
+      expect(await first).toMatchObject({ status: "ok", data: "first" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows immediate work with a zero-sized waiting queue", async () => {
+    const limiter = createRateLimiter(1, 1_000, { maxQueueSize: 0 });
+    const result = await limiter.execute(async () => "immediate");
+
+    expect(result).toMatchObject({ status: "ok", data: "immediate" });
+    expect(limiter.pending).toBe(0);
+  });
+
+  it("rejects invalid queue limits", () => {
+    expect(() => createRateLimiter(1, 1_000, { maxQueueSize: -1 })).toThrow();
+    expect(() => createRateLimiter(1, 1_000, { maxQueueSize: 1.5 })).toThrow();
+  });
+
   it("retries failures with exponential backoff", async () => {
     vi.useFakeTimers();
     const operation = vi.fn().mockRejectedValueOnce(new Error("busy")).mockResolvedValue("done");

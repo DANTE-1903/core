@@ -14,6 +14,8 @@ export default defineConfig({
     "src/integration/index.ts",
     "src/lazy/index.ts",
     "src/shared/keyManagement.ts",
+    "src/compliance/index.ts",
+    "src/utility/index.ts",
   ],
   format: ["cjs", "esm"],
   // tsc emits declaration files separately; tsup's multi-entry declaration

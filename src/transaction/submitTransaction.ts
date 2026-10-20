@@ -42,9 +42,11 @@ const horizonCircuitBreaker = new CircuitBreakerRegistry({
 interface ReplayRecord {
   submittedAt: number;   // Unix ms
   hash: string;
+  groupId: string;
 }
 
 const _submittedHashes = new Map<string, ReplayRecord>();
+const _inFlightGroups = new Set<string>();
 
 /** Key used to namespace replay entries per Horizon endpoint. */
 function replayKey(horizonUrl: string, txHash: string): string {
@@ -57,13 +59,13 @@ function replayKey(horizonUrl: string, txHash: string): string {
  * memory bounded. Defaults to 5 minutes, which is well past Stellar's
  * transaction timeout window.
  */
-function registerSubmitted(horizonUrl: string, txHash: string, ttlMs = 300_000): void {
+function registerSubmitted(horizonUrl: string, txHash: string, groupId = txHash, ttlMs = 300_000): void {
   const now = Date.now();
   // Prune stale entries before inserting
   for (const [key, record] of _submittedHashes) {
     if (now - record.submittedAt > ttlMs) _submittedHashes.delete(key);
   }
-  _submittedHashes.set(replayKey(horizonUrl, txHash), { submittedAt: now, hash: txHash });
+  _submittedHashes.set(replayKey(horizonUrl, txHash), { submittedAt: now, hash: txHash, groupId });
 }
 
 /**
@@ -85,7 +87,7 @@ export interface ReplayProtectionStats {
   /** Number of transaction hashes currently tracked. */
   trackedHashes: number;
   /** The tracked entries, including the Horizon endpoint they were submitted to. */
-  entries: Array<{ horizonUrl: string; hash: string; submittedAt: number }>;
+  entries: Array<{ horizonUrl: string; hash: string; groupId: string; submittedAt: number }>;
 }
 
 /**
@@ -97,6 +99,7 @@ export interface ReplayProtectionStats {
  */
 export function clearReplayProtection(): void {
   _submittedHashes.clear();
+  _inFlightGroups.clear();
 }
 
 /** Inspect the in-process replay-protection registry (for observability/tests). */
@@ -106,6 +109,7 @@ export function getReplayProtectionStats(): ReplayProtectionStats {
     return {
       horizonUrl: separator === -1 ? key : key.slice(0, separator),
       hash: record.hash,
+      groupId: record.groupId,
       submittedAt: record.submittedAt,
     };
   });
@@ -229,6 +233,7 @@ async function submitTransactionImpl(
   }
 
   let txHash: string | undefined;
+  let replayGroupId: string | undefined;
   let parsedTx: unknown;
 
   try {
@@ -240,6 +245,14 @@ async function submitTransactionImpl(
       txHash = tx.hash().toString("hex");
     } catch {
       txHash = undefined;
+    }
+
+    try {
+      replayGroupId = tx instanceof FeeBumpTransaction
+        ? tx.innerTransaction.hash().toString("hex")
+        : txHash;
+    } catch {
+      replayGroupId = txHash;
     }
 
     if (detectNetworkPassphraseMismatch(tx, networkPassphrase)) {
@@ -257,8 +270,9 @@ async function submitTransactionImpl(
     // Reject duplicate XDR submissions within the same process lifetime.
     // This guards against double-clicks, retry loops, and copied XDRs being
     // reused — catastrophic for payment operations.
-    if (txHash) {
-      const duplicate = getReplayRecord(horizonUrl, txHash);
+    if (replayGroupId) {
+      const duplicate = getReplayRecord(horizonUrl, replayGroupId) ??
+        (txHash ? getReplayRecord(horizonUrl, txHash) : undefined);
       if (duplicate) {
         const ageSeconds = Math.round((Date.now() - duplicate.submittedAt) / 1000);
         return err(
@@ -269,6 +283,14 @@ async function submitTransactionImpl(
             `Build and sign a new transaction if you want to retry the operation.`,
         );
       }
+      const groupKey = replayKey(horizonUrl, replayGroupId);
+      if (_inFlightGroups.has(groupKey)) {
+        return err(
+          SorokitErrorCode.TX_SUBMIT_FAILED,
+          `Replay protection: a submission for transaction group ${replayGroupId} is already in flight.`,
+        );
+      }
+      _inFlightGroups.add(groupKey);
     }
 
     const response = await horizonCircuitBreaker.call(horizonUrl, async () => {
@@ -295,7 +317,10 @@ async function submitTransactionImpl(
 
     // Register in the replay-protection registry so the same XDR cannot be
     // submitted again within the TTL window.
-    registerSubmitted(horizonUrl, response.hash);
+    registerSubmitted(horizonUrl, response.hash, replayGroupId ?? response.hash);
+    if (replayGroupId && replayGroupId !== response.hash) {
+      registerSubmitted(horizonUrl, replayGroupId, replayGroupId);
+    }
 
     // Horizon's synchronous submit returns after ledger inclusion, so a
     // success is both "submitted" and "confirmed". Fire-and-forget: webhook
@@ -334,6 +359,8 @@ async function submitTransactionImpl(
       undefined,
       mapped.recovery ? { recovery: mapped.recovery } : undefined,
     );
+  } finally {
+    if (replayGroupId) _inFlightGroups.delete(replayKey(horizonUrl, replayGroupId));
   }
 }
 

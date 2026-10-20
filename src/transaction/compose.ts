@@ -90,6 +90,10 @@ export interface ComposeOptions {
   horizonUrl?: string;
   /** Override the RPC URL for a network-type `network`. */
   rpcUrl?: string;
+  /** Mark this builder as intended for reuse; mutable operations emit a warning. */
+  memoize?: boolean;
+  /** Disable the mutable-operation warning for deliberate expert reuse. */
+  warnOnMutableMemoized?: boolean;
 }
 
 export interface ComposePaymentParams {
@@ -314,6 +318,15 @@ export function compose(
   let sequenceOverride = options.sequenceNumber;
   let timeoutSeconds = options.timeout ?? DEFAULT_TX_TIMEOUT_SECONDS;
   let memoState: { memo: string; memoType?: MemoType } | undefined;
+
+  const warnIfMemoizedMutable = (operation: string): void => {
+    if (options.memoize && options.warnOnMutableMemoized !== false) {
+      console.warn(
+        `[Sorokit] Memoized transaction builder contains mutable operation "${operation}". ` +
+          "Create a fresh builder per transaction or set warnOnMutableMemoized: false deliberately.",
+      );
+    }
+  };
 
   const push = (op: PendingComposeOperation): void => {
     pendingOps.push(op);
@@ -613,6 +626,15 @@ export function compose(
     },
 
     addSetOptions(params) {
+      const hasMutableSettings =
+        params.signers?.length ||
+        params.clearFlags !== undefined ||
+        params.masterWeight !== undefined ||
+        params.lowThreshold !== undefined ||
+        params.medThreshold !== undefined ||
+        params.highThreshold !== undefined ||
+        params.inflationDest !== undefined;
+      if (hasMutableSettings) warnIfMemoizedMutable("setOptions");
       const setOptions = {
         ...(params.masterWeight !== undefined && { masterWeight: params.masterWeight }),
         ...(params.lowThreshold !== undefined && { lowThreshold: params.lowThreshold }),

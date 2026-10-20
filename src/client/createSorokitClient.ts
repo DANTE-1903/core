@@ -193,6 +193,7 @@ import type {
   ProposalStatus,
   ProposalTracker,
   TrackProposalOptions,
+  UserVoteRecord,
   VoteChoice,
   VoteReceipt,
   VotingPower,
@@ -279,6 +280,7 @@ import type { ContractEvent } from "../soroban/subscribeContractEvents";
 import type {
   AnchorAsset,
   AnchorRequestOptions,
+  GetAnchorInfoOptions,
   Sep10AuthOptions,
   Sep24InteractiveResult,
 } from "../integration/anchors";
@@ -432,6 +434,11 @@ export interface SorokitClient {
       options?: FetchStellarTomlOptions,
     ): Promise<SorokitResult<StellarToml>>;
     clearStellarTomlCache(domain?: string): Promise<void>;
+    getAnchorInfo(
+      homeDomain: string,
+      options?: GetAnchorInfoOptions,
+    ): Promise<SorokitResult<StellarToml>>;
+    clearAnchorCache(homeDomain?: string): Promise<void>;
     authenticateSep10(
       anchorUrl: string,
       options: Sep10AuthOptions,
@@ -561,6 +568,11 @@ export interface SorokitClient {
       publicKey: string,
       options?: GovernanceCallOptions,
     ): Promise<SorokitResult<VotingPower>>;
+    /** #785: a voter's own cast votes, filterable by proposal status. */
+    getUserVotingHistory(
+      publicKey: string,
+      options?: GovernanceCallOptions & { status?: "open" | "closed" | "all" },
+    ): Promise<SorokitResult<UserVoteRecord[]>>;
     trackProposal(
       proposalId: ProposalId,
       options?: TrackProposalOptions,
@@ -1569,6 +1581,13 @@ export function createSorokitClient(
         ),
       clearStellarTomlCache: async (domain) =>
         (await import("../integration/sep1Toml")).clearStellarTomlCache(domain),
+      getAnchorInfo: async (homeDomain, options) =>
+        (await import("../integration/anchors")).getAnchorInfo(
+          homeDomain,
+          options,
+        ),
+      clearAnchorCache: async (homeDomain) =>
+        (await import("../integration/anchors")).clearAnchorCache(homeDomain),
       authenticateSep10: async (anchorUrl, options) =>
         (await import("../integration/anchors")).authenticateSep10(
           anchorUrl,
@@ -1716,6 +1735,11 @@ export function createSorokitClient(
         ),
       getVotingPower: async (publicKey, options) =>
         (await import("../integration/governance")).getVotingPower(publicKey, {
+          network: networkConfig.network,
+          ...options,
+        }),
+      getUserVotingHistory: async (publicKey, options) =>
+        (await import("../integration/governance")).getUserVotingHistory(publicKey, {
           network: networkConfig.network,
           ...options,
         }),
@@ -2641,7 +2665,7 @@ export function createSorokitClient(
                   ...(onUpgrade ? { onUpgrade } : {}),
                 },
               ),
-          ).then(applyTx) as any,
+          ).then(applyTx),
         ),
       simulate: (transactionXdr, timeoutMs) =>
         guard("soroban_simulate", timeoutMs, (signal) =>

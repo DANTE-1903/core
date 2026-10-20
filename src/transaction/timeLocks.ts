@@ -56,6 +56,14 @@ export interface TimeLockTransactionOptions {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isValidTimeBounds(timeBounds: TimeBounds): boolean {
+  if (
+    !timeBounds ||
+    typeof timeBounds !== "object" ||
+    !Number.isFinite(timeBounds.minTime) ||
+    !Number.isFinite(timeBounds.maxTime)
+  ) {
+    return false;
+  }
   if (timeBounds.minTime < 0 || timeBounds.maxTime < 0) return false;
   // maxTime === 0 means no upper bound, so no ordering constraint applies
   if (timeBounds.maxTime !== 0 && timeBounds.minTime > timeBounds.maxTime) {
@@ -101,7 +109,8 @@ export function getTimeLockedTransactionStatus(
 ): TimeLockExecutionStatus {
   if (!isValidTimeBounds(timeBounds)) return "invalid";
 
-  const now = nowSeconds ?? Date.now() / 1000;
+  const now = nowSeconds ?? Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(now)) return "invalid";
 
   if (timeBounds.minTime > 0 && now < timeBounds.minTime) return "pending";
   if (timeBounds.maxTime !== 0 && now > timeBounds.maxTime) return "expired";

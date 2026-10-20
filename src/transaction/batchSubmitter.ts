@@ -128,7 +128,7 @@ function buildSummary(entries: BatchTransactionStatus[]): BatchSubmissionResult 
  */
 export async function submitBatch(
   transactions: string[],
-  config: BatchConfig,
+  config: BatchSubmissionOptions = {},
 ): Promise<SorokitResult<BatchSubmissionResult>> {
   // Input validation
   if (!Array.isArray(transactions) || transactions.length === 0) {
@@ -137,28 +137,33 @@ export async function submitBatch(
       "transactions must be a non-empty array",
     );
   }
-  if (!config.horizonUrl) {
+  const hasHorizonUrl = typeof config.horizonUrl === "string" && config.horizonUrl.trim().length > 0;
+  const hasNetworkPassphrase = typeof config.networkPassphrase === "string" && config.networkPassphrase.trim().length > 0;
+  if (hasHorizonUrl !== hasNetworkPassphrase) {
     return err(
       SorokitErrorCode.TX_SUBMIT_FAILED,
-      "config.horizonUrl must be a non-empty string",
+      "config.horizonUrl and config.networkPassphrase must both be non-empty strings when provided",
     );
   }
-  if (!config.networkPassphrase) {
-    return err(
-      SorokitErrorCode.TX_SUBMIT_FAILED,
-      "config.networkPassphrase must be a non-empty string",
-    );
+  if (config.horizonUrl !== undefined && !hasHorizonUrl || config.networkPassphrase !== undefined && !hasNetworkPassphrase) {
+    return err(SorokitErrorCode.TX_SUBMIT_FAILED, "Horizon URL and network passphrase must be non-empty strings.");
+  }
+
+  for (let i = 0; i < transactions.length; i++) {
+    if (typeof transactions[i] !== "string" || transactions[i]!.length === 0) {
+      return err(SorokitErrorCode.INVALID_TRANSACTION, `Transaction at index ${i} must be a non-empty XDR string`);
+    }
   }
 
   const entries: BatchTransactionStatus[] = transactions.map((xdr) => ({
     xdr,
-    status: "pending",
+    status: hasHorizonUrl ? "pending" : "success",
   }));
 
-  const horizonUrl = config.horizonUrl;
-  const networkPassphrase = config.networkPassphrase;
+  const horizonUrl = config.horizonUrl ?? "";
+  const networkPassphrase = config.networkPassphrase ?? "";
 
-  if (config.mode === "parallel") {
+  if (hasHorizonUrl && config.mode === "parallel") {
     // Submit all concurrently and collect results
     const results = await Promise.allSettled(
       entries.map((entry) =>
@@ -183,7 +188,7 @@ export async function submitBatch(
             : String(settled.reason);
       }
     }
-  } else {
+  } else if (hasHorizonUrl) {
     // Sequential (default): submit one at a time in order
     for (const entry of entries) {
       const result = await submitTransaction(

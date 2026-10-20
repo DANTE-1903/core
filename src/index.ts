@@ -44,6 +44,13 @@ export {
   LAZY_MODULES,
   loadGovernance,
 } from "./lazy";
+export {
+  pruneExpiredChallenges,
+  getPendingChallengesCount,
+  clearPendingChallenges,
+  CHALLENGE_TTL_MS,
+  MAX_PENDING_CHALLENGES,
+} from "./integration";
 export type {
   AnchorAsset,
   AnchorRequestOptions,
@@ -498,6 +505,7 @@ export {
 export type {
   TimeBounds,
   TimeLockExecutionStatus,
+  TimeLockTransactionOptions,
 } from "./transaction/timeLocks";
 
 // ─── Transaction cost forecasting (#588) ──────────────────────────────────────
@@ -1296,6 +1304,7 @@ export type { LogLevel, LoggerOptions, SorokitLogger } from "./shared/logger";
 export {
   SorokitErrorCategory,
   SorokitErrorCode,
+  assertNever,
   assertOk,
   attachTraceId,
   err,
@@ -1404,24 +1413,6 @@ export type {
   ProfilingConfig,
   PerformanceMetricsReport,
 } from "./shared/metrics";
-
-// ─── Governance voting utilities (#456) ───────────────────────────────────────
-export {
-  getVotingPower,
-  delegateVote,
-  castVote,
-  getVotingHistory,
-} from "./governance";
-export type {
-  VotingPowerParams,
-  VotingPowerResult,
-  DelegationParams,
-  DelegationResult,
-  CastVoteParams,
-  CastVoteResult,
-  VotingHistoryEntry,
-  GetVotingHistoryParams,
-} from "./governance";
 
 // ─── Transaction bundles (#457) ───────────────────────────────────────────────
 export {
@@ -1745,6 +1736,110 @@ export type {
   EndpointCheckOptions,
 } from "./shared/diagnostics";
 
+// ─── Compliance audit trail (#791) ────────────────────────────────────────────
+// Previously implemented but unreachable from the package's public entry
+// point: no export here, no package.json subpath, and not in tsup.config.ts's
+// entry list, so it never even shipped in dist/.
+export {
+  createAuditTrail,
+  recordOperation,
+  recordAction,
+  getAuditTrail,
+  queryAuditLog,
+  getAllEntries,
+  clearAuditTrail,
+  generateComplianceReport,
+} from "./compliance";
+export type {
+  AuditContext,
+  AuditFilters,
+  AuditQueryOptions,
+  AuditRecord,
+  AuditTrail,
+  ComplianceAuditReport,
+  ComplianceDateRange,
+} from "./compliance";
+
+// ─── Data validation/sanitization utilities (#791) ────────────────────────────
+// Same unreachable-module issue as compliance/ above. Note: these duplicate
+// some validators already in shared/validation.ts (STELLAR_MAX_DECIMALS vs.
+// STELLAR_MAX_DECIMAL_PLACES, a second validateAssetCode/isValidAddress, etc).
+// Consolidating the two is a larger follow-up; for now this module's symbols
+// are aliased with a `Utility` suffix to avoid colliding with the
+// already-exported shared/validation.ts names.
+export {
+  validateAddress as validateAddressUtility,
+  isValidAddress as isValidAddressUtility,
+  validateAmount as validateAmountUtility,
+  validateAssetCode as validateAssetCodeUtility,
+  validateUrl as validateUrlUtility,
+  sanitizeInput,
+  STELLAR_MAX_DECIMALS as UTILITY_STELLAR_MAX_DECIMALS,
+  STELLAR_MAX_AMOUNT as UTILITY_STELLAR_MAX_AMOUNT,
+  STELLAR_MIN_ASSET_CODE_LEN,
+  STELLAR_MAX_ASSET_CODE_LEN,
+  deduplicateRequest,
+  createRateLimiter,
+  validateContractMethodSpec,
+  isValidContractMethodSpec,
+  validateSorobanType,
+  SOROBAN_MAX_METHOD_NAME_LEN,
+  SOROBAN_RESERVED_KEYWORDS,
+  SOROBAN_SCALAR_TYPES,
+  SOROBAN_CONTAINER_TYPES,
+  SOROBAN_SPECIAL_TYPES,
+} from "./utility";
+export type {
+  StellarAddressType,
+  AddressValidationData,
+  AmountValidationData,
+  AssetCodeValidationData,
+  UrlValidationData,
+  ValidationData as UtilityValidationData,
+  AmountValidationOptions,
+  UrlValidationOptions,
+  SanitizeInputOptions,
+  RateLimiterOptions,
+  RateLimiter,
+  ContractMethodParamSpec,
+  ContractMethodSpecInput,
+  ContractMethodValidationData,
+} from "./utility";
+
+// ─── Structured operation logger (#791) ────────────────────────────────────────
+// Same unreachable-module issue as compliance/ and utility/ above. Aliased
+// with an `Infra` suffix — shared/logger.ts (exported above as
+// createTracedLogger) defines its own LogLevel/LoggerOptions/createLogger
+// with a different, incompatible shape, and is the SDK's canonical logger.
+// This module is kept as a distinct, separately-named API rather than
+// silently merged with it.
+export {
+  createLogger as createInfraLogger,
+  createConsoleTransport as createInfraConsoleTransport,
+  createFileTransport as createInfraFileTransport,
+  createExternalTransport as createInfraExternalTransport,
+} from "./infrastructure/logger";
+export type {
+  LogLevel as InfraLogLevel,
+  LogContext as InfraLogContext,
+  LogEntry as InfraLogEntry,
+  LogFormatterName as InfraLogFormatterName,
+  LogFormatter as InfraLogFormatter,
+  LogTransport as InfraLogTransport,
+  Logger as InfraLogger,
+  LoggerOptions as InfraLoggerOptions,
+  ExternalLogSink as InfraExternalLogSink,
+} from "./infrastructure/logger";
+
+// ─── Runtime shape validators (#790) ──────────────────────────────────────────
+// Validate untrusted data against the SDK's own public type shapes at
+// runtime. All return SorokitResult<T> and never throw.
+export {
+  validateAssetBalance,
+  validateAccountInfo,
+  validateResolvedNetworkConfig,
+} from "./types-validation";
+
 // ─── Centralised input validation ─────────────────────────────────────────────
 // Five validators covering the most common input types across the SDK.
 // All return SorokitResult<string> and never throw.
@@ -1942,6 +2037,7 @@ export type {
 // ─── Transaction scheduler (#453) ────────────────────────────────────────────
 export { createCache, CacheBuilder } from "./performance/cacheStrategy";
 export type {
+  CacheOptions,
   CachedData,
   CacheStats,
   CacheFetcher,
@@ -1957,17 +2053,21 @@ export type {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 export type { LazyModule, LazyModuleName } from "./lazy";
 
-// ─── On-chain governance (#686) ──────────────────────────────────────────────
-// `getVotingPower` is already exported above by the #456 governance helpers
-// (object-parameter signature), so the #686 variant is re-exported here as
-// `getGovernanceVotingPower`; it is also available unaliased as
-// `getVotingPower` from "sorokit-core/integration" and on client.integration.
+// ─── On-chain governance (#686, #785, #788) ──────────────────────────────────
+// The unrelated #456 stub module (src/governance/, permanent no-op
+// placeholders that never implemented anything real) previously also
+// exported a `getVotingPower`, forcing this one to be aliased as
+// `getGovernanceVotingPower`. #788 removed that stub module and
+// consolidated governance into this one, real implementation, so the
+// alias is no longer needed: this is exported unaliased, matching
+// "sorokit-core/integration" and client.integration.
 export {
   configureGovernance,
   createHttpGovernanceProvider,
   getProposal,
   getProposals,
-  getVotingPower as getGovernanceVotingPower,
+  getUserVotingHistory,
+  getVotingPower,
   trackProposal,
   voteOnProposal,
   PROPOSAL_STATUSES,
@@ -1984,6 +2084,7 @@ export type {
   ProposalTally,
   ProposalTracker,
   TrackProposalOptions,
+  UserVoteRecord,
   VoteChoice,
   VoteReceipt,
   VotingPower,

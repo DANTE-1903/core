@@ -4,6 +4,12 @@ import type { SorokitResult } from "../shared/response";
 export interface RateLimiterOptions {
   maxRetries?: number;
   initialBackoffMs?: number;
+  /**
+   * Maximum number of requests waiting to start. Requests beyond this limit
+   * fail with `RATE_LIMITED`; active operations are not counted. Omitted means
+   * the queue remains unbounded for backwards compatibility.
+   */
+  maxQueueSize?: number;
 }
 
 export interface RateLimiter {
@@ -43,14 +49,20 @@ export function createRateLimiter(
   if (!Number.isInteger(limit) || limit <= 0 || !Number.isFinite(windowMs) || windowMs <= 0) {
     throw new RangeError("limit and windowMs must be positive numbers");
   }
+  if (options.maxQueueSize !== undefined &&
+    (!Number.isInteger(options.maxQueueSize) || options.maxQueueSize < 0)) {
+    throw new RangeError("maxQueueSize must be a non-negative integer");
+  }
 
   const queue: Array<() => void> = [];
   const starts: number[] = [];
   const maxRetries = options.maxRetries ?? 2;
   const initialBackoffMs = options.initialBackoffMs ?? 100;
+  const maxQueueSize = options.maxQueueSize;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const drain = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
     const now = Date.now();
     while (starts.length > 0 && now - starts[0]! >= windowMs) starts.shift();
@@ -63,15 +75,33 @@ export function createRateLimiter(
     }
   };
 
-  const acquire = (): Promise<void> => new Promise((resolve) => {
-    queue.push(resolve);
+  const acquire = (): Promise<void> => {
     drain();
-  });
+    if (
+      maxQueueSize !== undefined &&
+      queue.length >= maxQueueSize &&
+      starts.length >= limit
+    ) {
+      return Promise.reject(new Error("Rate limiter queue is full."));
+    }
+    return new Promise((resolve) => {
+      queue.push(resolve);
+      drain();
+    });
+  };
 
   return {
     get pending() { return queue.length; },
     async execute<T>(operation: () => Promise<T>): Promise<SorokitResult<T>> {
-      await acquire();
+      try {
+        await acquire();
+      } catch (cause) {
+        return err(
+          SorokitErrorCode.RATE_LIMITED,
+          "Rate limiter queue is full.",
+          cause,
+        );
+      }
       let lastCause: unknown;
       for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
         try {
