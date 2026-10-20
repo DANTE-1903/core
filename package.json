@@ -60,6 +60,16 @@
       "types": "./dist/lazy/index.d.ts",
       "import": "./dist/lazy/index.mjs",
       "require": "./dist/lazy/index.js"
+    },
+    "./compliance": {
+      "types": "./dist/compliance/index.d.ts",
+      "import": "./dist/compliance/index.mjs",
+      "require": "./dist/compliance/index.js"
+    },
+    "./utility": {
+      "types": "./dist/utility/index.d.ts",
+      "import": "./dist/utility/index.mjs",
+      "require": "./dist/utility/index.js"
     }
   },
   "files": [
