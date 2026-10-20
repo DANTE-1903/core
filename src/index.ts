@@ -1780,6 +1780,14 @@ export {
   STELLAR_MAX_ASSET_CODE_LEN,
   deduplicateRequest,
   createRateLimiter,
+  validateContractMethodSpec,
+  isValidContractMethodSpec,
+  validateSorobanType,
+  SOROBAN_MAX_METHOD_NAME_LEN,
+  SOROBAN_RESERVED_KEYWORDS,
+  SOROBAN_SCALAR_TYPES,
+  SOROBAN_CONTAINER_TYPES,
+  SOROBAN_SPECIAL_TYPES,
 } from "./utility";
 export type {
   StellarAddressType,
@@ -1793,6 +1801,9 @@ export type {
   SanitizeInputOptions,
   RateLimiterOptions,
   RateLimiter,
+  ContractMethodParamSpec,
+  ContractMethodSpecInput,
+  ContractMethodValidationData,
 } from "./utility";
 
 // ─── Structured operation logger (#791) ────────────────────────────────────────
