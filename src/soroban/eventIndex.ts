@@ -17,26 +17,21 @@ function djb2Hash(s: string): string {
   return (h >>> 0).toString(16);
 }
 
-function hashKey(event: ContractEvent): string {
-  return djb2Hash(
-    String(event.id ?? "") +
-      ":" +
-      String(event.contractId ?? "") +
-      ":" +
-      String((event as any).ledger ?? "") +
-      ":" +
-      String(event.name ?? ""),
-  );
+function stableEventKey(event: ContractEvent): string {
+  const value = (event as Record<string, unknown>).value;
+  const topics = (event as Record<string, unknown>).topics;
+  return JSON.stringify([
+    event.id ?? (event as Record<string, unknown>).pagingToken ?? null,
+    event.contractId ?? (event as Record<string, unknown>).contract_id ?? null,
+    (event as Record<string, unknown>).ledger ?? null,
+    event.name ?? (event as Record<string, unknown>).eventType ?? null,
+    topics ?? null,
+    value ?? null,
+  ]);
 }
 
-function fullKey(event: ContractEvent): string {
-  return (
-    String(event.id ?? "") +
-    "|" +
-    String(event.contractId ?? "") +
-    "|" +
-    String((event as any).ledger ?? "")
-  );
+function hashKey(event: ContractEvent): string {
+  return djb2Hash(stableEventKey(event));
 }
 
 /**
@@ -52,20 +47,23 @@ export class EventIndex {
   private readonly primary = new Map<string, ContractEvent>();
   private readonly collisions = new Map<string, ContractEvent[]>();
 
-  /** Insert an event into the index. */
-  add(event: ContractEvent): void {
+  constructor(private readonly capacity = 0) {}
+
+  /** Insert an event; returns true when it was already present. */
+  add(event: ContractEvent): boolean {
     const h = hashKey(event);
 
     if (!this.primary.has(h)) {
       this.primary.set(h, event);
-      return;
+      this.enforceCapacity();
+      return false;
     }
 
     // Hash is already occupied — check for true equality vs collision
     const existing = this.primary.get(h)!;
-    if (fullKey(existing) === fullKey(event)) {
+    if (stableEventKey(existing) === stableEventKey(event)) {
       // Exact duplicate — do not store again
-      return;
+      return true;
     }
 
     // Genuine hash collision — stash in collisions list
@@ -73,6 +71,28 @@ export class EventIndex {
       this.collisions.set(h, []);
     }
     this.collisions.get(h)!.push(event);
+    this.enforceCapacity();
+    return false;
+  }
+
+  private enforceCapacity(): void {
+    if (this.capacity <= 0) return;
+    const events = this.allEvents();
+    if (events.length <= this.capacity) return;
+    const retained = events.slice(events.length - this.capacity);
+    this.primary.clear();
+    this.collisions.clear();
+    for (const event of retained) {
+      const hash = hashKey(event);
+      const existing = this.primary.get(hash);
+      if (!existing) this.primary.set(hash, event);
+      else this.collisions.set(hash, [...(this.collisions.get(hash) ?? []), event]);
+    }
+  }
+
+  has(event: ContractEvent): boolean {
+    const key = stableEventKey(event);
+    return this.allEvents().some((entry) => stableEventKey(entry) === key);
   }
 
   /** Return all events (primary + collisions) as a flat array. */
@@ -152,7 +172,7 @@ export class EventIndex {
     const seen = new Map<string, ContractEvent>();
 
     for (const event of all) {
-      const fk = fullKey(event);
+      const fk = stableEventKey(event);
       if (!seen.has(fk)) {
         seen.set(fk, event);
       }
@@ -193,4 +213,21 @@ export class EventIndex {
     this.primary.clear();
     this.collisions.clear();
   }
+}
+
+export function hashString(value: string): string {
+  return djb2Hash(value);
+}
+
+export function hashEvent(event: ContractEvent): string {
+  return hashKey(event);
+}
+
+/** Return only events not already present in the index, adding each new event. */
+export function filterNewEvents<T extends ContractEvent>(index: EventIndex, events: T[]): T[] {
+  const fresh: T[] = [];
+  for (const event of events) {
+    if (!index.add(event)) fresh.push(event);
+  }
+  return fresh;
 }
