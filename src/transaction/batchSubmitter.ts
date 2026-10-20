@@ -1,288 +1,260 @@
-/**
- * Batch transaction submission with rollback on failure (#589).
- *
- * Provides atomic all-or-nothing execution of multiple transactions
- * with rollback tracking and failure instructions.
- */
-
 import { ok, err, SorokitErrorCode } from "../shared/response";
 import type { SorokitResult } from "../shared/response";
+import type { SorokitCache } from "../shared/cache";
+import { submitTransaction } from "./submitTransaction";
+import type { TransactionResult } from "./types";
 
-/**
- * Status of a single transaction in a batch.
- */
-export type TransactionBatchStatus =
-  | "pending"
-  | "submitted"
-  | "success"
-  | "failed"
-  | "rolled_back";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * Individual transaction status in batch submission.
- */
+export type BatchTransactionStatusCode = "pending" | "success" | "failed";
+export type TransactionBatchStatus = BatchTransactionStatusCode;
+
 export interface BatchTransactionStatus {
+  /** The original signed XDR submitted */
   xdr: string;
-  status: TransactionBatchStatus;
+  status: BatchTransactionStatusCode;
+  /** Populated from TransactionResult.hash on success */
   hash?: string;
+  /** Populated from SorokitError.message on failure */
   error?: string;
-  sequenceNumber?: number;
+  ledger?: number;
+  envelopeXdr?: string;
+  resultXdr?: string;
 }
 
-/**
- * Options for batch submission behavior.
- */
-export interface BatchSubmissionOptions {
+export interface BatchSubmissionResult {
+  /** true iff all transactions succeeded */
+  ok: boolean;
+  summary: "all_success" | "all_failed" | "partial_success";
+  /** Count of entries with status === "success" */
+  succeeded: number;
+  /** Count of entries with status === "failed" */
+  failed: number;
+  transactions: BatchTransactionStatus[];
+  /** Compatibility metadata for callers that compose a batch before submission. */
+  status?: "all_success" | "all_failed" | "partial_success";
+  submitted?: number;
+  atomic?: boolean;
+  rollbackOnFailure?: boolean;
+}
+
+export interface BatchConfig {
+  horizonUrl: string;
+  networkPassphrase: string;
+  /**
+   * "sequential" (default) processes XDRs one at a time in order.
+   * "parallel" fires all requests concurrently with Promise.allSettled.
+   */
+  mode?: "sequential" | "parallel";
+  /** Optional cache passed through to submitTransaction */
+  cache?: SorokitCache;
+  atomic?: boolean;
+  rollbackOnFailure?: boolean;
+}
+
+export interface BatchSubmissionOptions extends Partial<BatchConfig> {
   atomic?: boolean;
   rollbackOnFailure?: boolean;
   continueOnError?: boolean;
   timeout?: number;
 }
 
-/**
- * Result of batch submission containing per-transaction status.
- */
-export interface BatchSubmissionResult {
-  submitted: number;
-  succeeded: number;
-  failed: number;
-  status: "all_success" | "partial_success" | "all_failed";
-  transactions: BatchTransactionStatus[];
-  rollbackInstructions?: string[];
-  atomic: boolean;
-  rollbackOnFailure: boolean;
+export type RetryStrategy = "none" | "retry_failed" | "retry_all";
+
+export interface RollbackInstruction {
+  xdr: string;
+  hash?: string;
+  reason: string;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function applyResult(
+  entry: BatchTransactionStatus,
+  result: SorokitResult<TransactionResult>,
+): void {
+  if (result.status === "ok") {
+    entry.status = "success";
+    entry.hash = result.data.hash;
+    if (result.data.ledger !== undefined) entry.ledger = result.data.ledger;
+    if (result.data.envelopeXdr !== undefined) entry.envelopeXdr = result.data.envelopeXdr;
+    if (result.data.resultXdr !== undefined) entry.resultXdr = result.data.resultXdr;
+  } else {
+    entry.status = "failed";
+    entry.error = result.error.message;
+  }
+}
+
+function buildSummary(entries: BatchTransactionStatus[]): BatchSubmissionResult {
+  const succeeded = entries.filter((e) => e.status === "success").length;
+  const failed = entries.filter((e) => e.status === "failed").length;
+  let summary: BatchSubmissionResult["summary"];
+  if (failed === 0) {
+    summary = "all_success";
+  } else if (succeeded === 0) {
+    summary = "all_failed";
+  } else {
+    summary = "partial_success";
+  }
+  return {
+    ok: summary === "all_success",
+    summary,
+    succeeded,
+    failed,
+    transactions: entries,
+  };
+}
+
+// ─── Public functions ─────────────────────────────────────────────────────────
+
 /**
- * Submit multiple transactions in batch with atomic or best-effort semantics.
+ * Submit a batch of signed transaction XDRs to the Stellar network.
  *
- * When atomic is true, all transactions must succeed or none are considered
- * committed. On any failure, rollback instructions are provided.
+ * By default (mode: "sequential") XDRs are submitted one at a time in order —
+ * the safe default for transactions sharing a source account, where sequence
+ * numbers must be incremented in order.
  *
- * @param transactions - Array of transaction XDRs (base64)
- * @param options - Batch submission options
- * @returns A SorokitResult containing per-transaction status and rollback info
+ * With mode: "parallel", all XDRs are submitted concurrently via
+ * Promise.allSettled — suitable for independent transactions from different
+ * source accounts.
  *
- * @example
- * const batch = await client.transaction.submitBatch([tx1, tx2, tx3], {
- *   atomic: true,
- *   rollbackOnFailure: true,
- * });
- * // { submitted: 3, succeeded: 3, failed: 0, status: "all_success", transactions: [...] }
+ * Failed individual submissions set status: "failed" on the corresponding
+ * entry and do not abort the rest of the batch.
+ *
+ * @param transactions     - Array of signed transaction XDRs to submit.
+ * @param config           - Horizon URL, network passphrase, mode, and optional cache.
+ * @returns `ok(BatchSubmissionResult)` on completion (even with partial failures),
+ *          or `err(TX_SUBMIT_FAILED)` when the input is invalid.
  */
-export function submitBatch(
+export async function submitBatch(
   transactions: string[],
-  options: BatchSubmissionOptions = {},
-): SorokitResult<BatchSubmissionResult> {
+  config: BatchConfig,
+): Promise<SorokitResult<BatchSubmissionResult>> {
+  // Input validation
   if (!Array.isArray(transactions) || transactions.length === 0) {
     return err(
-      SorokitErrorCode.INVALID_TRANSACTION,
-      "Transactions array must be non-empty",
+      SorokitErrorCode.TX_SUBMIT_FAILED,
+      "transactions must be a non-empty array",
+    );
+  }
+  if (!config.horizonUrl) {
+    return err(
+      SorokitErrorCode.TX_SUBMIT_FAILED,
+      "config.horizonUrl must be a non-empty string",
+    );
+  }
+  if (!config.networkPassphrase) {
+    return err(
+      SorokitErrorCode.TX_SUBMIT_FAILED,
+      "config.networkPassphrase must be a non-empty string",
     );
   }
 
-  for (let i = 0; i < transactions.length; i++) {
-    if (!transactions[i] || typeof transactions[i] !== "string") {
-      return err(
-        SorokitErrorCode.INVALID_TRANSACTION,
-        `Transaction at index ${i} must be a non-empty XDR string`,
-      );
-    }
-  }
-
-  const atomic = options.atomic ?? false;
-  const rollbackOnFailure = options.rollbackOnFailure ?? false;
-
-  const batchStatus: BatchTransactionStatus[] = transactions.map((xdr) => ({
+  const entries: BatchTransactionStatus[] = transactions.map((xdr) => ({
     xdr,
     status: "pending",
   }));
 
-  const result: BatchSubmissionResult = {
-    submitted: transactions.length,
-    succeeded: transactions.length,
-    failed: 0,
-    status: "all_success",
-    transactions: batchStatus,
-    atomic,
-    rollbackOnFailure,
-  };
+  const horizonUrl = config.horizonUrl;
+  const networkPassphrase = config.networkPassphrase;
 
-  return ok(result);
+  if (config.mode === "parallel") {
+    // Submit all concurrently and collect results
+    const results = await Promise.allSettled(
+      entries.map((entry) =>
+        submitTransaction(
+          horizonUrl,
+          networkPassphrase,
+          entry.xdr,
+          config.cache,
+        ),
+      ),
+    );
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i] as BatchTransactionStatus;
+      const settled = results[i] as PromiseSettledResult<SorokitResult<TransactionResult>>;
+      if (settled.status === "fulfilled") {
+        applyResult(entry, settled.value);
+      } else {
+        entry.status = "failed";
+        entry.error =
+          settled.reason instanceof Error
+            ? (settled.reason as Error).message
+            : String(settled.reason);
+      }
+    }
+  } else {
+    // Sequential (default): submit one at a time in order
+    for (const entry of entries) {
+      const result = await submitTransaction(
+        horizonUrl,
+        networkPassphrase,
+        entry.xdr,
+        config.cache,
+      );
+      applyResult(entry, result);
+    }
+  }
+
+  const summary = buildSummary(entries);
+  return ok({ ...summary, status: summary.summary, submitted: transactions.length, atomic: config.atomic ?? false, rollbackOnFailure: config.rollbackOnFailure ?? false });
 }
 
 /**
- * Track the status of individual transactions in a batch.
- *
- * @param batchResult - The result from submitBatch
- * @param transactionIndex - Index of the transaction to check
- * @returns A SorokitResult containing the transaction status
+ * Returns true only when every transaction in the batch succeeded.
+ * Stellar does not natively support atomic multi-transaction batches,
+ * so "atomic" here means "all or nothing from the caller's perspective".
  */
-export function getTransactionStatus(
-  batchResult: BatchSubmissionResult,
-  transactionIndex: number,
-): SorokitResult<BatchTransactionStatus> {
-  if (!batchResult || typeof batchResult !== "object") {
-    return err(
-      SorokitErrorCode.VALIDATION,
-      "Batch result must be a valid object",
-    );
-  }
-
-  if (
-    transactionIndex < 0 ||
-    transactionIndex >= batchResult.transactions.length
-  ) {
-    return err(
-      SorokitErrorCode.VALIDATION,
-      `Transaction index ${transactionIndex} out of range`,
-    );
-  }
-
-  const transaction = batchResult.transactions[transactionIndex];
-  if (!transaction) {
-    return err(
-      SorokitErrorCode.VALIDATION,
-      `Transaction index ${transactionIndex} out of range`,
-    );
-  }
-
-  return ok(transaction);
+export function wasAtomicExecuted(result: BatchSubmissionResult): SorokitResult<boolean> {
+  return ok((result.status ?? result.summary) === "all_success");
 }
 
 /**
- * Generate rollback instructions for a failed batch submission.
- *
- * @param batchResult - The failed batch submission result
- * @returns A SorokitResult containing rollback steps
+ * Recommends a retry strategy based on the submission outcome.
+ * - "none"         — all succeeded; nothing to retry.
+ * - "retry_failed" — partial success; only failed entries should be retried.
+ * - "retry_all"    — all failed; re-submit the entire batch.
+ */
+export function suggestRetryStrategy(result: BatchSubmissionResult): SorokitResult<{ strategy: RetryStrategy; failedIndices: number[] }> {
+  const summary = result.status ?? result.summary;
+  const strategy: RetryStrategy = summary === "all_success"
+    ? "none"
+    : summary === "all_failed" ? "retry_all" : "retry_failed";
+  const failedIndices = result.transactions.flatMap((tx, index) => tx.status === "failed" ? [index] : []);
+  return ok({ strategy, failedIndices });
+}
+
+/**
+ * Returns one RollbackInstruction per *successful* transaction in the batch
+ * when at least one transaction failed (partial failure scenario).
+ * If all transactions succeeded or all failed, returns an empty array
+ * (nothing to roll back in either clean case).
  */
 export function generateRollbackInstructions(
-  batchResult: BatchSubmissionResult,
-): SorokitResult<string[]> {
-  if (!batchResult || typeof batchResult !== "object") {
-    return err(
-      SorokitErrorCode.VALIDATION,
-      "Batch result must be a valid object",
-    );
-  }
-
-  const instructions: string[] = [];
-
-  const successfulTxs = batchResult.transactions.filter(
-    (tx) => tx.status === "success" || tx.status === "submitted",
-  );
-  const failedTxs = batchResult.transactions.filter(
-    (tx) => tx.status === "failed",
-  );
-
-  if (failedTxs.length > 0) {
-    instructions.push(`${failedTxs.length} transaction(s) failed:`);
-    failedTxs.forEach((tx, i) => {
-      instructions.push(
-        `  ${i + 1}. Failed: ${tx.error || "Unknown error"}`,
-      );
-    });
-  }
-
-  if (batchResult.atomic && successfulTxs.length > 0) {
-    instructions.push("Atomic mode: All successful transactions must be reversed.");
-    successfulTxs.forEach((tx) => {
-      instructions.push(
-        `  - Reverse transaction with XDR: ${tx.xdr.substring(0, 50)}...`,
-      );
-    });
-  }
-
-  if (successfulTxs.length > 0) {
-    instructions.push("Review failed transaction details:");
-    failedTxs.forEach((tx) => {
-      instructions.push(
-        `  - Index: ${batchResult.transactions.indexOf(tx)}, Error: ${tx.error || "Unknown"}`,
-      );
-    });
-  }
-
-  if (batchResult.rollbackOnFailure && failedTxs.length > 0) {
-    instructions.push("Manual cleanup required for partially committed batches.");
-  }
-
-  return ok(instructions);
+  result: BatchSubmissionResult,
+): SorokitResult<RollbackInstruction[]> {
+  if ((result.status ?? result.summary) !== "partial_success") return ok([]);
+  return ok(result.transactions
+    .filter((tx) => tx.status === "success")
+    .map((tx) => {
+      const instruction: RollbackInstruction = {
+        xdr: tx.xdr,
+        reason:
+          "Transaction succeeded but batch partially failed — manual reversal may be required.",
+      };
+      if (tx.hash !== undefined) instruction.hash = tx.hash;
+      return instruction;
+    }));
 }
 
-/**
- * Check if a batch submission completed atomically.
- *
- * @param batchResult - The batch submission result
- * @returns A SorokitResult indicating atomic completion
- */
-export function wasAtomicExecuted(
-  batchResult: BatchSubmissionResult,
-): SorokitResult<boolean> {
-  if (!batchResult || typeof batchResult !== "object") {
-    return err(
-      SorokitErrorCode.VALIDATION,
-      "Batch result must be a valid object",
-    );
+/** Read the status for a transaction in a completed batch. */
+export function getTransactionStatus(
+  result: BatchSubmissionResult,
+  transactionIndex: number,
+): SorokitResult<BatchTransactionStatus> {
+  const transaction = result?.transactions?.[transactionIndex];
+  if (!transaction) {
+    return err(SorokitErrorCode.VALIDATION, `Transaction index ${transactionIndex} out of range`);
   }
-
-  if (!batchResult.atomic) {
-    return ok(true);
-  }
-
-  const isComplete =
-    batchResult.status === "all_success" ||
-    batchResult.status === "all_failed";
-
-  return ok(isComplete);
-}
-
-/**
- * Determine retry strategy for a failed batch.
- *
- * @param batchResult - The failed batch result
- * @returns A SorokitResult containing retry recommendations
- */
-export function suggestRetryStrategy(
-  batchResult: BatchSubmissionResult,
-): SorokitResult<{
-  retryable: boolean;
-  failedIndices: number[];
-  recommendations: string[];
-}> {
-  if (!batchResult || typeof batchResult !== "object") {
-    return err(
-      SorokitErrorCode.VALIDATION,
-      "Batch result must be a valid object",
-    );
-  }
-
-  const failedIndices = batchResult.transactions
-    .map((tx, i) => (tx.status === "failed" ? i : -1))
-    .filter((i) => i >= 0);
-
-  const recommendations: string[] = [];
-
-  if (failedIndices.length === 0) {
-    return ok({
-      retryable: false,
-      failedIndices: [],
-      recommendations: ["No failed transactions to retry."],
-    });
-  }
-
-  if (batchResult.atomic) {
-    recommendations.push("Atomic batch failed; resubmit entire batch or none.");
-    recommendations.push("Verify all prerequisite transactions completed.");
-  } else {
-    recommendations.push(
-      `Retry ${failedIndices.length} failed transaction(s) independently.`,
-    );
-    recommendations.push("Increase timeout if errors are time-related.");
-  }
-
-  return ok({
-    retryable: true,
-    failedIndices,
-    recommendations,
-  });
+  return ok(transaction);
 }
