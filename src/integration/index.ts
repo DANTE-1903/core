@@ -42,11 +42,13 @@ export type {
   VerifyDIDOwnershipResult,
 } from "./didSupport";
 // #686: governance proposals, voting, voting power and tracking.
+// #785: getUserVotingHistory — a voter's own cast votes, open/closed/all.
 export {
   configureGovernance,
   createHttpGovernanceProvider,
   getProposal,
   getProposals,
+  getUserVotingHistory,
   getVotingPower,
   normalizeProposal,
   resetGovernance,
@@ -66,6 +68,7 @@ export type {
   ProposalTally,
   ProposalTracker,
   TrackProposalOptions,
+  UserVoteRecord,
   VoteChoice,
   VoteReceipt,
   VotingPower,

@@ -189,6 +189,7 @@ import type {
   ProposalStatus,
   ProposalTracker,
   TrackProposalOptions,
+  UserVoteRecord,
   VoteChoice,
   VoteReceipt,
   VotingPower,
@@ -563,6 +564,11 @@ export interface SorokitClient {
       publicKey: string,
       options?: GovernanceCallOptions,
     ): Promise<SorokitResult<VotingPower>>;
+    /** #785: a voter's own cast votes, filterable by proposal status. */
+    getUserVotingHistory(
+      publicKey: string,
+      options?: GovernanceCallOptions & { status?: "open" | "closed" | "all" },
+    ): Promise<SorokitResult<UserVoteRecord[]>>;
     trackProposal(
       proposalId: ProposalId,
       options?: TrackProposalOptions,
@@ -1702,6 +1708,11 @@ export function createSorokitClient(
           network: networkConfig.network,
           ...options,
         }),
+      getUserVotingHistory: async (publicKey, options) =>
+        (await import("../integration/governance")).getUserVotingHistory(publicKey, {
+          network: networkConfig.network,
+          ...options,
+        }),
       trackProposal: async (proposalId, options) =>
         (await import("../integration/governance")).trackProposal(proposalId, {
           network: networkConfig.network,
@@ -2550,7 +2561,7 @@ export function createSorokitClient(
                   ...(onUpgrade ? { onUpgrade } : {}),
                 },
               ),
-          ).then(applyTx) as any,
+          ).then(applyTx),
         ),
       simulate: (transactionXdr, timeoutMs) =>
         guard("soroban_simulate", timeoutMs, (signal) =>

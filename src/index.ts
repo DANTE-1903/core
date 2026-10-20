@@ -1406,24 +1406,6 @@ export type {
   PerformanceMetricsReport,
 } from "./shared/metrics";
 
-// ─── Governance voting utilities (#456) ───────────────────────────────────────
-export {
-  getVotingPower,
-  delegateVote,
-  castVote,
-  getVotingHistory,
-} from "./governance";
-export type {
-  VotingPowerParams,
-  VotingPowerResult,
-  DelegationParams,
-  DelegationResult,
-  CastVoteParams,
-  CastVoteResult,
-  VotingHistoryEntry,
-  GetVotingHistoryParams,
-} from "./governance";
-
 // ─── Transaction bundles (#457) ───────────────────────────────────────────────
 export {
   createTransactionBundle,
@@ -2041,17 +2023,21 @@ export type {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 export type { LazyModule, LazyModuleName } from "./lazy";
 
-// ─── On-chain governance (#686) ──────────────────────────────────────────────
-// `getVotingPower` is already exported above by the #456 governance helpers
-// (object-parameter signature), so the #686 variant is re-exported here as
-// `getGovernanceVotingPower`; it is also available unaliased as
-// `getVotingPower` from "sorokit-core/integration" and on client.integration.
+// ─── On-chain governance (#686, #785, #788) ──────────────────────────────────
+// The unrelated #456 stub module (src/governance/, permanent no-op
+// placeholders that never implemented anything real) previously also
+// exported a `getVotingPower`, forcing this one to be aliased as
+// `getGovernanceVotingPower`. #788 removed that stub module and
+// consolidated governance into this one, real implementation, so the
+// alias is no longer needed: this is exported unaliased, matching
+// "sorokit-core/integration" and client.integration.
 export {
   configureGovernance,
   createHttpGovernanceProvider,
   getProposal,
   getProposals,
-  getVotingPower as getGovernanceVotingPower,
+  getUserVotingHistory,
+  getVotingPower,
   trackProposal,
   voteOnProposal,
   PROPOSAL_STATUSES,
@@ -2068,6 +2054,7 @@ export type {
   ProposalTally,
   ProposalTracker,
   TrackProposalOptions,
+  UserVoteRecord,
   VoteChoice,
   VoteReceipt,
   VotingPower,
