@@ -498,6 +498,7 @@ export {
 export type {
   TimeBounds,
   TimeLockExecutionStatus,
+  TimeLockTransactionOptions,
 } from "./transaction/timeLocks";
 
 // ─── Transaction cost forecasting (#588) ──────────────────────────────────────
@@ -1931,6 +1932,7 @@ export type {
 // ─── Transaction scheduler (#453) ────────────────────────────────────────────
 export { createCache, CacheBuilder } from "./performance/cacheStrategy";
 export type {
+  CacheOptions,
   CachedData,
   CacheStats,
   CacheFetcher,

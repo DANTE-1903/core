@@ -1,5 +1,7 @@
 export {
   authenticateSep10,
+  clearAnchorCache,
+  getAnchorInfo,
   getSep6TransactionStatus,
   initiateSep6Transfer,
   initiateSep24Interactive,
@@ -7,6 +9,7 @@ export {
 export type {
   AnchorAsset,
   AnchorRequestOptions,
+  GetAnchorInfoOptions,
   Sep10AuthOptions,
   Sep24InteractiveResult,
 } from "./anchors";
