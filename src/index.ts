@@ -1745,6 +1745,99 @@ export type {
   EndpointCheckOptions,
 } from "./shared/diagnostics";
 
+// ─── Compliance audit trail (#791) ────────────────────────────────────────────
+// Previously implemented but unreachable from the package's public entry
+// point: no export here, no package.json subpath, and not in tsup.config.ts's
+// entry list, so it never even shipped in dist/.
+export {
+  createAuditTrail,
+  recordOperation,
+  recordAction,
+  getAuditTrail,
+  queryAuditLog,
+  getAllEntries,
+  clearAuditTrail,
+  generateComplianceReport,
+} from "./compliance";
+export type {
+  AuditContext,
+  AuditFilters,
+  AuditQueryOptions,
+  AuditRecord,
+  AuditTrail,
+  ComplianceAuditReport,
+  ComplianceDateRange,
+} from "./compliance";
+
+// ─── Data validation/sanitization utilities (#791) ────────────────────────────
+// Same unreachable-module issue as compliance/ above. Note: these duplicate
+// some validators already in shared/validation.ts (STELLAR_MAX_DECIMALS vs.
+// STELLAR_MAX_DECIMAL_PLACES, a second validateAssetCode/isValidAddress, etc).
+// Consolidating the two is a larger follow-up; for now this module's symbols
+// are aliased with a `Utility` suffix to avoid colliding with the
+// already-exported shared/validation.ts names.
+export {
+  validateAddress as validateAddressUtility,
+  isValidAddress as isValidAddressUtility,
+  validateAmount as validateAmountUtility,
+  validateAssetCode as validateAssetCodeUtility,
+  validateUrl as validateUrlUtility,
+  sanitizeInput,
+  STELLAR_MAX_DECIMALS as UTILITY_STELLAR_MAX_DECIMALS,
+  STELLAR_MAX_AMOUNT as UTILITY_STELLAR_MAX_AMOUNT,
+  STELLAR_MIN_ASSET_CODE_LEN,
+  STELLAR_MAX_ASSET_CODE_LEN,
+  deduplicateRequest,
+  createRateLimiter,
+} from "./utility";
+export type {
+  StellarAddressType,
+  AddressValidationData,
+  AmountValidationData,
+  AssetCodeValidationData,
+  UrlValidationData,
+  ValidationData as UtilityValidationData,
+  AmountValidationOptions,
+  UrlValidationOptions,
+  SanitizeInputOptions,
+  RateLimiterOptions,
+  RateLimiter,
+} from "./utility";
+
+// ─── Structured operation logger (#791) ────────────────────────────────────────
+// Same unreachable-module issue as compliance/ and utility/ above. Aliased
+// with an `Infra` suffix — shared/logger.ts (exported above as
+// createTracedLogger) defines its own LogLevel/LoggerOptions/createLogger
+// with a different, incompatible shape, and is the SDK's canonical logger.
+// This module is kept as a distinct, separately-named API rather than
+// silently merged with it.
+export {
+  createLogger as createInfraLogger,
+  createConsoleTransport as createInfraConsoleTransport,
+  createFileTransport as createInfraFileTransport,
+  createExternalTransport as createInfraExternalTransport,
+} from "./infrastructure/logger";
+export type {
+  LogLevel as InfraLogLevel,
+  LogContext as InfraLogContext,
+  LogEntry as InfraLogEntry,
+  LogFormatterName as InfraLogFormatterName,
+  LogFormatter as InfraLogFormatter,
+  LogTransport as InfraLogTransport,
+  Logger as InfraLogger,
+  LoggerOptions as InfraLoggerOptions,
+  ExternalLogSink as InfraExternalLogSink,
+} from "./infrastructure/logger";
+
+// ─── Runtime shape validators (#790) ──────────────────────────────────────────
+// Validate untrusted data against the SDK's own public type shapes at
+// runtime. All return SorokitResult<T> and never throw.
+export {
+  validateAssetBalance,
+  validateAccountInfo,
+  validateResolvedNetworkConfig,
+} from "./types-validation";
+
 // ─── Centralised input validation ─────────────────────────────────────────────
 // Five validators covering the most common input types across the SDK.
 // All return SorokitResult<string> and never throw.
