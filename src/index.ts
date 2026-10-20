@@ -44,6 +44,13 @@ export {
   LAZY_MODULES,
   loadGovernance,
 } from "./lazy";
+export {
+  pruneExpiredChallenges,
+  getPendingChallengesCount,
+  clearPendingChallenges,
+  CHALLENGE_TTL_MS,
+  MAX_PENDING_CHALLENGES,
+} from "./integration";
 export type {
   AnchorAsset,
   AnchorRequestOptions,

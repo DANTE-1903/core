@@ -27,9 +27,78 @@ interface ChallengeContext {
   expiresAt: number;
 }
 
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const MAX_PENDING_CHALLENGES = 128;
+export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+export const MAX_PENDING_CHALLENGES = 128;
 const pendingChallenges = new Map<string, ChallengeContext>();
+let evictionTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopEvictionTimer(): void {
+  if (evictionTimer !== null) {
+    clearTimeout(evictionTimer);
+    evictionTimer = null;
+  }
+}
+
+function scheduleEvictionTimer(now: number = Date.now()): void {
+  stopEvictionTimer();
+  if (pendingChallenges.size === 0) return;
+
+  const oldest = pendingChallenges.values().next().value as ChallengeContext | undefined;
+  if (!oldest) return;
+
+  const delay = Math.max(0, oldest.expiresAt - now);
+  evictionTimer = setTimeout(() => {
+    evictionTimer = null;
+    pruneExpiredChallenges(Date.now());
+  }, delay);
+
+  if (typeof evictionTimer.unref === "function") {
+    evictionTimer.unref();
+  }
+}
+
+/**
+ * Proactively prune expired challenges from the pending map.
+ * Because challenges are inserted chronologically with uniform TTL, the iteration order
+ * matches chronological expiration order. The search exits early at O(K) on the first unexpired entry.
+ *
+ * @param now Timestamp in ms (defaults to Date.now()).
+ * @returns Count of expired challenges evicted.
+ */
+export function pruneExpiredChallenges(now: number = Date.now()): number {
+  let pruned = 0;
+  for (const [key, context] of pendingChallenges) {
+    if (context.expiresAt <= now) {
+      pendingChallenges.delete(key);
+      pruned++;
+    } else {
+      break;
+    }
+  }
+
+  if (pendingChallenges.size === 0) {
+    stopEvictionTimer();
+  } else {
+    scheduleEvictionTimer(now);
+  }
+
+  return pruned;
+}
+
+/**
+ * Return current number of pending challenges in memory (for testing and observability).
+ */
+export function getPendingChallengesCount(): number {
+  return pendingChallenges.size;
+}
+
+/**
+ * Clear all pending challenges and stop any background eviction timer.
+ */
+export function clearPendingChallenges(): void {
+  stopEvictionTimer();
+  pendingChallenges.clear();
+}
 
 function tomlString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -154,9 +223,10 @@ export async function initiateSep10Auth(
     }
 
     const now = Date.now();
-    for (const [key, context] of pendingChallenges) {
-      if (context.expiresAt <= now) pendingChallenges.delete(key);
-    }
+    pruneExpiredChallenges(now);
+    // Map.set preserves an existing key's insertion position. Delete first so
+    // refreshing the same XDR keeps Map order aligned with its new expiresAt.
+    pendingChallenges.delete(body.transaction);
     if (pendingChallenges.size >= MAX_PENDING_CHALLENGES) {
       const oldest = pendingChallenges.keys().next().value as string | undefined;
       if (oldest) pendingChallenges.delete(oldest);
@@ -170,6 +240,7 @@ export async function initiateSep10Auth(
       fetcher,
       expiresAt: now + CHALLENGE_TTL_MS,
     });
+    scheduleEvictionTimer(now);
     return ok(body.transaction);
   } catch (cause) {
     return err(SorokitErrorCode.NETWORK_ERROR, "Failed to request SEP-10 challenge.", cause);
@@ -187,9 +258,14 @@ export async function completeSep10Auth(
   const context = pendingChallenges.get(challengeXdr);
   if (!context) return err(SorokitErrorCode.INVALID_AUTH, "SEP-10 challenge is unknown or has already been used.");
   pendingChallenges.delete(challengeXdr);
-  if (context.expiresAt <= Date.now()) {
+
+  const now = options.now ?? Date.now();
+  if (context.expiresAt <= now) {
+    pruneExpiredChallenges(now);
     return err(SorokitErrorCode.INVALID_AUTH, "SEP-10 challenge has expired.");
   }
+
+  pruneExpiredChallenges(now);
 
   try {
     const signed = TransactionBuilder.fromXDR(signedChallengeXdr, context.networkPassphrase) as Transaction;
