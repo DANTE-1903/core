@@ -49,6 +49,8 @@ import {
 } from "./claimableBalance";
 import { estimateFee } from "./estimateFee";
 import type { FeeEstimate } from "./estimateFee";
+import { buildDataEntryOperation } from "../account/dataEntries";
+import type { DataEntryValue } from "./dataEntry";
 import type { MemoType, SetOptionsParams } from "./types";
 import type { ClaimPredicateInput } from "./types";
 
@@ -167,6 +169,10 @@ export interface ComposeBuilder {
   addClaimClaimableBalance(balanceId: string): ComposeBuilder;
   addBumpSequence(bumpToSequence: string): ComposeBuilder;
   addSetOptions(params: SetOptionsParams): ComposeBuilder;
+  addSetDataEntry(key: string, value: DataEntryValue): ComposeBuilder;
+  setData(key: string, value: DataEntryValue): ComposeBuilder;
+  addDeleteDataEntry(key: string): ComposeBuilder;
+  deleteData(key: string): ComposeBuilder;
   addMemo(memo: string, memoType?: MemoType): ComposeBuilder;
   /** Enable automatic fee estimation; `{ mode: "high" }` prefers the fast tier. */
   estimateFee(mode: FeeEstimateMode): ComposeBuilder;
@@ -655,6 +661,26 @@ export function compose(
         });
       }
       return builder;
+    },
+
+    addSetDataEntry(key, value) {
+      const result = buildDataEntryOperation(key, value);
+      push({ kind: "setDataEntry", build: () => result });
+      return builder;
+    },
+
+    setData(key, value) {
+      return this.addSetDataEntry(key, value);
+    },
+
+    addDeleteDataEntry(key) {
+      const result = buildDataEntryOperation(key, null);
+      push({ kind: "deleteDataEntry", build: () => result });
+      return builder;
+    },
+
+    deleteData(key) {
+      return this.addDeleteDataEntry(key);
     },
 
     addMemo(memo, memoType) {

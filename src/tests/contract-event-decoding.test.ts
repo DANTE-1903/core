@@ -40,4 +40,10 @@ describe("contract event decoders", () => {
     expect(result.status).toBe("ok");
     if (result.status === "ok") expect(result.data.type).toBe("custom.future");
   });
+
+  it("returns a structured validation error for malformed input", () => {
+    const result = decodeContractEvent(null);
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.error.code).toBe("CONTRACT_READ_FAILED");
+  });
 });

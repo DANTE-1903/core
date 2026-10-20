@@ -731,8 +731,18 @@ export type {
   TransactionDelta,
 } from "./xdrEncodingTypes";
 
-export { buildSetDataEntryTransaction, buildDeleteDataEntryTransaction } from "./dataEntry";
-export type { DataEntryTransactionOptions } from "./dataEntry";
+export {
+  buildSetDataEntryTransaction,
+  buildDeleteDataEntryTransaction,
+  setData,
+  deleteData,
+  validateDataEntryKey,
+  validateDataEntryValue,
+  getDataByteLength,
+  MAX_DATA_ENTRY_KEY_BYTES,
+  MAX_DATA_ENTRY_VALUE_BYTES,
+} from "./dataEntry";
+export type { DataEntryTransactionOptions, DataEntryValue } from "./dataEntry";
 
 // ─── Transaction signing coordination (#586) ──────────────────────────────────
 export {
