@@ -10,6 +10,15 @@ export type SorokitResult<T> =
   | { status: "ok"; data: T; error: null }
   | { status: "error"; data: null; error: SorokitError };
 
+/**
+ * Assert that a discriminated-union switch handled every case.
+ * With strict TypeScript settings, adding a new result status makes the call
+ * site fail to compile until its branch is handled.
+ */
+export function assertNever(value: never, context = "Unexpected result status"): never {
+  throw new Error(`${context}: ${String(value)}`);
+}
+
 export interface RecoveryAttempt {
   endpoint: string;
   error: string;

@@ -1297,6 +1297,7 @@ export type { LogLevel, LoggerOptions, SorokitLogger } from "./shared/logger";
 export {
   SorokitErrorCategory,
   SorokitErrorCode,
+  assertNever,
   assertOk,
   attachTraceId,
   err,
