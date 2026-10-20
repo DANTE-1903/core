@@ -109,6 +109,10 @@ import {
   buildSetDataEntryTransaction,
   buildDeleteDataEntryTransaction,
 } from "../transaction/dataEntry";
+import type {
+  DataEntryValue,
+  DataEntryTransactionOptions,
+} from "../transaction/dataEntry";
 import { compose } from "../transaction/compose";
 import type { ComposeOptions } from "../transaction/compose";
 import { orchestrate } from "../transaction/atomicOrchestrator";
@@ -823,6 +827,32 @@ export interface SorokitClient {
     buildSetOptions(
       sourcePublicKey: string,
       params: SetOptionsParams,
+      timeoutMs?: number,
+    ): Promise<SorokitResult<string>>;
+    buildSetDataEntry(
+      sourcePublicKey: string,
+      key: string,
+      value: DataEntryValue,
+      options?: DataEntryTransactionOptions,
+      timeoutMs?: number,
+    ): Promise<SorokitResult<string>>;
+    setData(
+      sourcePublicKey: string,
+      key: string,
+      value: DataEntryValue,
+      options?: DataEntryTransactionOptions,
+      timeoutMs?: number,
+    ): Promise<SorokitResult<string>>;
+    buildDeleteDataEntry(
+      sourcePublicKey: string,
+      key: string,
+      options?: DataEntryTransactionOptions,
+      timeoutMs?: number,
+    ): Promise<SorokitResult<string>>;
+    deleteData(
+      sourcePublicKey: string,
+      key: string,
+      options?: DataEntryTransactionOptions,
       timeoutMs?: number,
     ): Promise<SorokitResult<string>>;
     /**
@@ -2327,6 +2357,80 @@ export function createSorokitClient(
                 networkConfig,
                 sourcePublicKey,
                 params,
+              ),
+          ).then(applyTx),
+        ),
+      buildSetDataEntry: (sourcePublicKey, key, value, options, timeoutMs) =>
+        guard("tx_build", timeoutMs, () =>
+          withErrorHandling(
+            errorHandler,
+            {
+              functionName: "transaction.buildSetDataEntry",
+              params: { sourcePublicKey, key },
+            },
+            () =>
+              buildSetDataEntryTransaction(
+                horizonUrl,
+                networkConfig,
+                sourcePublicKey,
+                key,
+                value,
+                options,
+              ),
+          ).then(applyTx),
+        ),
+      setData: (sourcePublicKey, key, value, options, timeoutMs) =>
+        guard("tx_build", timeoutMs, () =>
+          withErrorHandling(
+            errorHandler,
+            {
+              functionName: "transaction.setData",
+              params: { sourcePublicKey, key },
+            },
+            () =>
+              buildSetDataEntryTransaction(
+                horizonUrl,
+                networkConfig,
+                sourcePublicKey,
+                key,
+                value,
+                options,
+              ),
+          ).then(applyTx),
+        ),
+      buildDeleteDataEntry: (sourcePublicKey, key, options, timeoutMs) =>
+        guard("tx_build", timeoutMs, () =>
+          withErrorHandling(
+            errorHandler,
+            {
+              functionName: "transaction.buildDeleteDataEntry",
+              params: { sourcePublicKey, key },
+            },
+            () =>
+              buildDeleteDataEntryTransaction(
+                horizonUrl,
+                networkConfig,
+                sourcePublicKey,
+                key,
+                options,
+              ),
+          ).then(applyTx),
+        ),
+      deleteData: (sourcePublicKey, key, options, timeoutMs) =>
+        guard("tx_build", timeoutMs, () =>
+          withErrorHandling(
+            errorHandler,
+            {
+              functionName: "transaction.deleteData",
+              params: { sourcePublicKey, key },
+            },
+            () =>
+              buildDeleteDataEntryTransaction(
+                horizonUrl,
+                networkConfig,
+                sourcePublicKey,
+                key,
+                options,
               ),
           ).then(applyTx),
         ),

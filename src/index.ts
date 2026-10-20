@@ -1787,6 +1787,17 @@ export type { AccountDataEntries } from "./account/dataEntries";
 export {
   buildSetDataEntryTransaction,
   buildDeleteDataEntryTransaction,
+  setData,
+  deleteData,
+  validateDataEntryKey,
+  validateDataEntryValue,
+  getDataByteLength,
+  MAX_DATA_ENTRY_KEY_BYTES,
+  MAX_DATA_ENTRY_VALUE_BYTES,
+} from "./transaction/dataEntry";
+export type {
+  DataEntryTransactionOptions,
+  DataEntryValue,
 } from "./transaction/dataEntry";
 export { detectContractUpgrade } from "./soroban/upgradeDetection";
 export type {
