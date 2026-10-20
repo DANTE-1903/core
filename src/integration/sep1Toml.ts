@@ -52,6 +52,43 @@ function domainUrl(domain: string): URL | null {
   }
 }
 
+function normalizeStellarToml(fields: Record<string, unknown>): StellarToml {
+  return {
+    ...fields,
+    ...(typeof fields.FEDERATION_SERVER === "string" ? { federation_server: fields.FEDERATION_SERVER } : {}),
+    ...(typeof fields.AUTH_SERVER === "string" ? { auth_server: fields.AUTH_SERVER } : {}),
+    ...(typeof fields.TRANSFER_SERVER === "string" ? { transfer_server: fields.TRANSFER_SERVER } : {}),
+    ...(typeof fields.TRANSFER_SERVER_SEP0024 === "string" ? { transfer_server_sep0024: fields.TRANSFER_SERVER_SEP0024 } : {}),
+    ...(typeof fields.WEB_AUTH_ENDPOINT === "string" ? { web_auth_endpoint: fields.WEB_AUTH_ENDPOINT } : {}),
+    ...(typeof fields.SIGNING_KEY === "string" ? { signing_key: fields.SIGNING_KEY } : {}),
+    ...(typeof fields.NETWORK_PASSPHRASE === "string" ? { network_passphrase: fields.NETWORK_PASSPHRASE } : {}),
+  };
+}
+
+export function getCachedStellarToml(domain: string): StellarToml | undefined {
+  const url = domainUrl(domain);
+  if (!url) return undefined;
+
+  const cacheKey = url.origin.toLowerCase();
+  const cached = tomlCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  if (cached) tomlCache.delete(cacheKey);
+  return undefined;
+}
+
+export function cacheStellarToml(
+  domain: string,
+  data: StellarToml,
+  ttlMs: number = DEFAULT_STELLAR_TOML_CACHE_TTL_MS,
+): void {
+  const url = domainUrl(domain);
+  if (!url || !Number.isFinite(ttlMs) || ttlMs <= 0) return;
+  tomlCache.set(url.origin.toLowerCase(), {
+    data: normalizeStellarToml(data),
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
 /** Fetch and parse a domain's SEP-1 `/.well-known/stellar.toml` document. */
 export async function fetchStellarToml(
   domain: string,
@@ -67,10 +104,8 @@ export async function fetchStellarToml(
     return err(SorokitErrorCode.VALIDATION, "Cache TTL must be a non-negative finite number.");
   }
 
-  const cacheKey = baseUrl.origin.toLowerCase();
-  const cached = tomlCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return ok(cached.data);
-  if (cached) tomlCache.delete(cacheKey);
+  const cached = getCachedStellarToml(domain);
+  if (cached) return ok(cached);
 
   const fetcher = options.fetch ?? globalThis.fetch;
   if (typeof fetcher !== "function") {
@@ -100,22 +135,12 @@ export async function fetchStellarToml(
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("The TOML document must contain a table.");
       }
-      const fields = parsed as Record<string, unknown>;
-      data = {
-        ...fields,
-        ...(typeof fields.FEDERATION_SERVER === "string" ? { federation_server: fields.FEDERATION_SERVER } : {}),
-        ...(typeof fields.AUTH_SERVER === "string" ? { auth_server: fields.AUTH_SERVER } : {}),
-        ...(typeof fields.TRANSFER_SERVER === "string" ? { transfer_server: fields.TRANSFER_SERVER } : {}),
-        ...(typeof fields.TRANSFER_SERVER_SEP0024 === "string" ? { transfer_server_sep0024: fields.TRANSFER_SERVER_SEP0024 } : {}),
-        ...(typeof fields.WEB_AUTH_ENDPOINT === "string" ? { web_auth_endpoint: fields.WEB_AUTH_ENDPOINT } : {}),
-        ...(typeof fields.SIGNING_KEY === "string" ? { signing_key: fields.SIGNING_KEY } : {}),
-        ...(typeof fields.NETWORK_PASSPHRASE === "string" ? { network_passphrase: fields.NETWORK_PASSPHRASE } : {}),
-      };
+      data = normalizeStellarToml(parsed as Record<string, unknown>);
     } catch (cause) {
       return err(SorokitErrorCode.INVALID_CONFIG, "The domain returned invalid stellar.toml.", cause);
     }
 
-    if (ttlMs > 0) tomlCache.set(cacheKey, { data, expiresAt: Date.now() + ttlMs });
+    cacheStellarToml(domain, data, ttlMs);
     return ok(data);
   } catch (cause) {
     return err(SorokitErrorCode.NETWORK_ERROR, "Failed to fetch stellar.toml.", cause);
