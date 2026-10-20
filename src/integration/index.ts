@@ -81,6 +81,11 @@ export {
   completeSep10Auth,
   initiateSep10Auth,
   validateSep10Token,
+  pruneExpiredChallenges,
+  getPendingChallengesCount,
+  clearPendingChallenges,
+  CHALLENGE_TTL_MS,
+  MAX_PENDING_CHALLENGES,
 } from "./sep10Auth";
 export type { AuthToken, InitiateSep10AuthOptions } from "./sep10Auth";
 export {
