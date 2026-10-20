@@ -1,6 +1,7 @@
 export { getWalletCapabilities, WALLET_CAPABILITY_IDS } from "./capabilities";
 export { connectWallet } from "./connect";
 export { disconnectWallet } from "./disconnect";
+export { WalletConnectionManager } from "./connection";
 export { signTransaction } from "./signTransaction";
 export { signTransactionOffline } from "./signTransactionOffline";
 export { SigningRateLimiter } from "./signingRateLimiter";
