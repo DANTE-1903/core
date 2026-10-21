@@ -1,6 +1,7 @@
 import { parse } from "smol-toml";
 import { err, ok, SorokitErrorCode } from "../shared/response";
 import type { SorokitResult } from "../shared/response";
+import type { SorokitLogger } from "../shared/logger";
 
 export interface StellarToml {
   FEDERATION_SERVER?: string;
@@ -24,11 +25,73 @@ export interface FetchStellarTomlOptions {
   ttlMs?: number;
   timeoutMs?: number;
   fetch?: typeof fetch;
+  /**
+   * When true (the default), a cache hit is verified against a fresh
+   * network fetch before being trusted. If the fresh document's
+   * SIGNING_KEY or any CURRENCIES issuer diverges from what's cached, the
+   * cache is invalidated, a warning is logged, and the fresh (not the
+   * stale) document is returned (#837).
+   *
+   * Set to false to skip verification and always trust a cache hit
+   * immediately (the old behavior) — useful for latency-sensitive callers
+   * that already re-verify issuer identity another way.
+   */
+  verifyOnCacheHit?: boolean;
+  /** Logger for conflict warnings. Defaults to a no-op logger. */
+  logger?: SorokitLogger;
+}
+
+/** Extract issuer addresses from a parsed TOML's CURRENCIES table, if present. */
+function currencyIssuers(toml: StellarToml): Set<string> {
+  const issuers = new Set<string>();
+  const currencies = (toml as Record<string, unknown>).CURRENCIES;
+  if (!Array.isArray(currencies)) return issuers;
+  for (const entry of currencies) {
+    if (entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).issuer === "string") {
+      issuers.add((entry as Record<string, unknown>).issuer as string);
+    }
+  }
+  return issuers;
+}
+
+/**
+ * Detect whether two stellar.toml documents disagree on security-critical
+ * fields: the SEP-10 SIGNING_KEY, or any CURRENCIES issuer address (#837).
+ * Returns a human-readable description of the conflict, or undefined when
+ * the two documents agree on everything checked.
+ */
+export function detectStellarTomlConflict(
+  cached: StellarToml,
+  fresh: StellarToml,
+): string | undefined {
+  if (cached.SIGNING_KEY && fresh.SIGNING_KEY && cached.SIGNING_KEY !== fresh.SIGNING_KEY) {
+    return `SIGNING_KEY changed from "${cached.SIGNING_KEY}" to "${fresh.SIGNING_KEY}"`;
+  }
+  const cachedIssuers = currencyIssuers(cached);
+  const freshIssuers = currencyIssuers(fresh);
+  for (const issuer of freshIssuers) {
+    if (cachedIssuers.size > 0 && !cachedIssuers.has(issuer)) {
+      return `CURRENCIES issuer set changed (new issuer "${issuer}" not present in cached document)`;
+    }
+  }
+  for (const issuer of cachedIssuers) {
+    if (!freshIssuers.has(issuer)) {
+      return `CURRENCIES issuer set changed (previously-cached issuer "${issuer}" is no longer present)`;
+    }
+  }
+  return undefined;
 }
 
 export const DEFAULT_STELLAR_TOML_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const tomlCache = new Map<string, { data: StellarToml; expiresAt: number }>();
+
+const NOOP_LOGGER: SorokitLogger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};
 
 function domainUrl(domain: string): URL | null {
   if (typeof domain !== "string" || !domain.trim()) return null;
@@ -89,24 +152,12 @@ export function cacheStellarToml(
   });
 }
 
-/** Fetch and parse a domain's SEP-1 `/.well-known/stellar.toml` document. */
-export async function fetchStellarToml(
+/** Perform the actual network fetch + parse, without touching the cache. */
+async function fetchStellarTomlFresh(
   domain: string,
-  options: FetchStellarTomlOptions = {},
+  baseUrl: URL,
+  options: FetchStellarTomlOptions,
 ): Promise<SorokitResult<StellarToml>> {
-  const baseUrl = domainUrl(domain);
-  if (!baseUrl) {
-    return err(SorokitErrorCode.INVALID_ADDRESS, "A valid HTTPS domain is required.");
-  }
-
-  const ttlMs = options.ttlMs ?? DEFAULT_STELLAR_TOML_CACHE_TTL_MS;
-  if (!Number.isFinite(ttlMs) || ttlMs < 0) {
-    return err(SorokitErrorCode.VALIDATION, "Cache TTL must be a non-negative finite number.");
-  }
-
-  const cached = getCachedStellarToml(domain);
-  if (cached) return ok(cached);
-
   const fetcher = options.fetch ?? globalThis.fetch;
   if (typeof fetcher !== "function") {
     return err(SorokitErrorCode.NETWORK_ERROR, "Fetch is unavailable in this runtime.");
@@ -129,24 +180,75 @@ export async function fetchStellarToml(
       return err(SorokitErrorCode.NETWORK_ERROR, `stellar.toml request failed (${response.status}).`);
     }
 
-    let data: StellarToml;
     try {
       const parsed: unknown = parse(await response.text());
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("The TOML document must contain a table.");
       }
-      data = normalizeStellarToml(parsed as Record<string, unknown>);
+      return ok(normalizeStellarToml(parsed as Record<string, unknown>));
     } catch (cause) {
       return err(SorokitErrorCode.INVALID_CONFIG, "The domain returned invalid stellar.toml.", cause);
     }
-
-    cacheStellarToml(domain, data, ttlMs);
-    return ok(data);
   } catch (cause) {
     return err(SorokitErrorCode.NETWORK_ERROR, "Failed to fetch stellar.toml.", cause);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Fetch and parse a domain's SEP-1 `/.well-known/stellar.toml` document. */
+export async function fetchStellarToml(
+  domain: string,
+  options: FetchStellarTomlOptions = {},
+): Promise<SorokitResult<StellarToml>> {
+  const baseUrl = domainUrl(domain);
+  if (!baseUrl) {
+    return err(SorokitErrorCode.INVALID_ADDRESS, "A valid HTTPS domain is required.");
+  }
+
+  const ttlMs = options.ttlMs ?? DEFAULT_STELLAR_TOML_CACHE_TTL_MS;
+  if (!Number.isFinite(ttlMs) || ttlMs < 0) {
+    return err(SorokitErrorCode.VALIDATION, "Cache TTL must be a non-negative finite number.");
+  }
+
+  const cached = getCachedStellarToml(domain);
+  if (cached) {
+    const verifyOnCacheHit = options.verifyOnCacheHit ?? true;
+    if (!verifyOnCacheHit) return ok(cached);
+
+    // #837: re-verify the cached issuer data against a fresh fetch before
+    // trusting it, instead of returning a possibly stale/conflicting
+    // cached document indefinitely.
+    const fresh = await fetchStellarTomlFresh(domain, baseUrl, options);
+    if (fresh.status !== "ok") {
+      // The re-verification fetch itself failed (network blip, etc). Fall
+      // back to the cached data rather than failing the whole call — the
+      // cache has not been proven stale, only unverifiable right now.
+      return ok(cached);
+    }
+
+    const conflict = detectStellarTomlConflict(cached, fresh.data);
+    if (conflict) {
+      (options.logger ?? NOOP_LOGGER).warn(
+        `stellar.toml for "${domain}" diverged from cached data: ${conflict}. Invalidating cache.`,
+        { domain, conflict },
+      );
+      clearStellarTomlCache(domain);
+      cacheStellarToml(domain, fresh.data, ttlMs);
+      return ok(fresh.data);
+    }
+
+    // No conflict — refresh the cache entry's TTL with the confirmed-fresh
+    // data and return it.
+    cacheStellarToml(domain, fresh.data, ttlMs);
+    return ok(fresh.data);
+  }
+
+  const fresh = await fetchStellarTomlFresh(domain, baseUrl, options);
+  if (fresh.status !== "ok") return fresh;
+
+  cacheStellarToml(domain, fresh.data, ttlMs);
+  return ok(fresh.data);
 }
 
 /** Clear all cached stellar.toml documents, or only one domain's entry. */
