@@ -84,6 +84,17 @@ export function clearSequenceCache(): void {
   _sequenceCache.clear();
 }
 
+/**
+ * Invalidate the cached `autoFetchSequence` entry for a single account (#836).
+ *
+ * Called after a submission fails with a sequence-related error (e.g.
+ * `tx_bad_seq`) so the next build for this account is forced to fetch a
+ * fresh sequence from Horizon instead of reusing the now-stale cached one.
+ */
+export function invalidateSequenceCacheEntry(publicKey: string): void {
+  _sequenceCache.delete(publicKey);
+}
+
 // ─── Offline helper ───────────────────────────────────────────────────────────
 
 /**

@@ -34,6 +34,7 @@ import {
   buildPaymentWithTrustline,
   buildSwapTransaction,
   clearSequenceCache,
+  invalidateSequenceCacheEntry,
   checkTrustlines,
   buildBulkTrustlines,
   validateMemoPolicy,
@@ -2132,6 +2133,42 @@ describe("sequence number auto-fetch cache", () => {
       params,
     );
     expect(mockLoadAccount).toHaveBeenCalledOnce();
+  });
+
+  it("invalidateSequenceCacheEntry() forces a re-fetch only for the given account (#836)", async () => {
+    const otherKey = "GAAL6LIAG2FGFQTKMUNGLCSCAM722PPYRVK2PXEMC6KNRRWLCFTYQD7R";
+    const mockAccount = {
+      sequence: "100",
+      sequenceNumber: vi.fn().mockReturnValue("101"),
+      incrementSequenceNumber: vi.fn(),
+      subentry_count: 0,
+      balances: [],
+      accountId: () => sourceKey,
+    };
+    mockLoadAccount.mockResolvedValue(mockAccount);
+
+    const params = {
+      destination,
+      amount: "10",
+      autoFetchSequence: true as const,
+    };
+
+    // Populate the cache for both accounts.
+    await buildPaymentTransaction(networkConfig.horizonUrl, networkConfig, sourceKey, params);
+    await buildPaymentTransaction(networkConfig.horizonUrl, networkConfig, otherKey, params);
+    mockLoadAccount.mockClear();
+
+    // Simulate a failed submission for `sourceKey` invalidating just its entry.
+    invalidateSequenceCacheEntry(sourceKey);
+
+    // sourceKey must re-fetch from Horizon (cache was invalidated).
+    await buildPaymentTransaction(networkConfig.horizonUrl, networkConfig, sourceKey, params);
+    expect(mockLoadAccount).toHaveBeenCalledOnce();
+    mockLoadAccount.mockClear();
+
+    // otherKey's cache entry is untouched — no fetch needed.
+    await buildPaymentTransaction(networkConfig.horizonUrl, networkConfig, otherKey, params);
+    expect(mockLoadAccount).not.toHaveBeenCalled();
   });
 });
 
